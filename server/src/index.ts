@@ -1,3 +1,8 @@
+import appInsights from 'applicationinsights'
+if (process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
+  appInsights.setup().setAutoCollectRequests(true).setAutoCollectPerformance(true, false).setAutoCollectExceptions(true).setAutoCollectDependencies(true).start()
+}
+
 import 'dotenv/config'
 import express from 'express'
 import type { NextFunction, Request, Response } from 'express'
@@ -1023,6 +1028,8 @@ export function startServer(listenPort = port) {
     googleAuth: isGoogleAuthConfigured(),
     openAI: isOpenAIConfigured(),
     dataRoot: DATA_ROOT,
+    blobStorage: !!process.env.AZURE_STORAGE_ACCOUNT,
+    appInsights: !!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING,
     corsOrigins: [...getAllowedOrigins()],
   })
 

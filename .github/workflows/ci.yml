@@ -93,7 +93,10 @@ jobs:
               "OPENAI_API_KEY=secretref:openai-key" \
               "GOOGLE_CLIENT_ID=secretref:google-client-id" \
               "AUTH_ALLOWED_EMAIL=secretref:auth-email" \
-              "AUTH_SESSION_SECRET=secretref:session-secret"
+              "AUTH_SESSION_SECRET=secretref:session-secret" \
+              "AZURE_STORAGE_ACCOUNT=aplcfiles2026" \
+              "AZURE_STORAGE_CONTAINER=userdata" \
+              "APPLICATIONINSIGHTS_CONNECTION_STRING=${{ secrets.APPINSIGHTS_CONNECTION_STRING }}"
 
       - name: Verify deployment health
         run: |

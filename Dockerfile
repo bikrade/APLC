@@ -27,7 +27,6 @@ RUN npm ci --omit=dev
 
 COPY --from=server-build /app/server/dist ./dist
 COPY --from=client-build /app/client/dist /app/client/dist
-COPY seed/ /app/data/
 
 EXPOSE 3001
 
