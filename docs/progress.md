@@ -1,0 +1,43 @@
+# Progress
+
+## Log
+
+- Scaffold and documentation structure created.
+- Product requirements reviewed from `docs/product.md`.
+- Decision recorded: filesystem-first persistence (JSON files) preferred over database for current phase.
+- Backend prototype APIs implemented for users, insights, session start/fetch, answer, help, reveal, pause, and health.
+- Frontend prototype flow implemented: login, home insights, session play, summary.
+- Documentation updated to map architecture, storage decisions, contracts, and prompt strategy.
+- Timer behavior fixed to update live during active question and preserve pause/resume.
+- Wrong-answer submit flow updated to avoid revealing the correct answer automatically.
+- Session UI enhanced with top progress bar and live score.
+- OpenAI hint integration added with env configuration and API error surfacing.
+- OpenAI question generation: sessions now use AI-generated questions when OpenAI is configured (rule-based fallback preserved).
+- OpenAI explanation generation: personalized per-answer explanations via AI when configured (static fallback preserved).
+- Added `dotenv` support for `.env`-based credential loading.
+- Added `server/.env.example` template for OpenAI configuration.
+- Switched from Azure OpenAI to OpenAI API directly (OPENAI_API_KEY + OPENAI_MODEL).
+- Added structured console logging for all OpenAI calls: latency, model, token usage (prompt/completion/total), finish reason, request ID.
+- Fixed live timer bug: `useMemo` for `elapsedMs` now includes tick counter in dependencies so elapsed time updates in real time.
+- Added Duolingo-style celebration UX: dual-burst confetti on correct answer, animated "Excellent!" overlay, green/red feedback banners with icons.
+- Correct answer flow changed: no auto-advance; student clicks "Continue" to proceed (mirrors Duolingo pattern).
+- Added `canvas-confetti` dependency to client.
+- Call-stat accumulator added to `openai.ts` — each `chatCompletion()` call pushes structured stats to an in-memory array; `flushCallStats()` retrieves and clears.
+- Filesystem logging system in progress: structured JSON logs with YYYYMMDDHHMMSS filenames capturing questions, answers, results, and OpenAI call stats.
+- Complete UI/UX redesign to a modern, Duolingo-style interface.
+- Added new dashboard endpoint to aggregate historical session data (accuracy, streaks, activity heatmap).
+- Redesigned home screen with stat cards, streak tracking, and subject selection cards.
+- Enhanced session UI with modern question cards, animated timer, and difficulty slider.
+- Upgraded celebration UX: multiple confetti styles (classic, shooting stars, school pride, cascade) and encouraging animations for incorrect answers.
+- Both correct and incorrect answer flows now pause for student acknowledgement ("Continue" or "Next Question" button).
+- Added KaTeX math rendering: LaTeX notation in AI-generated questions, hints, and explanations now renders as beautiful typeset math instead of raw `\( \frac{...}{...} \)` strings.
+- Added exit-session flow: session screen now has an "Exit" button with a confirmation modal that saves progress and returns to dashboard.
+- Added `GET /sessions/in-progress/:userId` endpoint to detect and return the most recent active session.
+- Dashboard now shows an in-progress session banner with resume button when an unfinished session exists.
+- Added progress insights panel to dashboard: compares recent vs older session accuracy to show trend (improving / declining / steady / new).
+- Added `progressInsights` field to `GET /dashboard/:userId` response with trend, labels, recent/best accuracy, and total questions answered.
+- Added live score vs target gauge on session Q&A screen: animated progress bar with target marker at 80%, color-coded score, and "Target met!" indicator.
+- Added session target badge on summary screen when accuracy meets or exceeds the 80% target.
+- Enhanced wrong-answer overlay: now has a white card with red glow border, shake animation, and radial background tint for more exciting visual feedback.
+- Session exit modal uses blur backdrop and spring-in animation for a polished feel.
+- Reliability hardening pass: added process-level error handlers, express error middleware, env-configurable client API base URL, and log-friendly local run scripts for backend (`dev:local`, `start:local`).

@@ -1,0 +1,40 @@
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+client/dist/
+server/dist/
+.tmp/
+playwright-report/
+test-results/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Local env files — never commit real .env files
+.env
+.env.local
+server/.env
+
+# Runtime data (PIDs, logs, ngrok state)
+data/runtime/
+
+# User session data (contains personal data)
+data/users/
+
+# Compiled JS output from server build
+server/test/*.js
+server/test/*.d.ts
+server/test/*.js.map
+server/test/*.d.ts.map
+server/vitest.config.js
+server/vitest.config.d.ts
+server/vitest.config.js.map
+server/vitest.config.d.ts.map
+
+# macOS
+.DS_Store
