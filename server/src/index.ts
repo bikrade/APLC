@@ -1,4 +1,4 @@
-import appInsights from 'applicationinsights'
+import * as appInsights from 'applicationinsights'
 if (process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
   appInsights.setup().setAutoCollectRequests(true).setAutoCollectPerformance(true, false).setAutoCollectExceptions(true).setAutoCollectDependencies(true).start()
 }
