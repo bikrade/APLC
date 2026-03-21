@@ -21,6 +21,7 @@ import type { QuestionState, SessionRecord, Subject } from './types'
 import { createQuestionPlaceholder, generateQuestionByType, getQuestionTypeForIndex, isAnswerCorrect, parseAnswer } from './utils'
 import { generateHintSteps, generateExplanation, isOpenAIConfigured, flushCallStats } from './openai'
 import { evaluateReadingSummary, getReadingQuestionCount } from './reading'
+import { logger, requestLogger, asyncHandler } from './logger'
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -123,6 +124,7 @@ app.use(cors({
   },
 }))
 app.use(express.json({ limit: '32kb' }))
+app.use(requestLogger)
 
 const sessions = new Map<string, SessionRecord>()
 
@@ -339,7 +341,7 @@ async function refreshInsightsFile(userId: string): Promise<InsightPayload> {
   return payload
 }
 
-app.post('/auth/google', noStore, rateLimit('auth-google', 20, 10 * 60 * 1000), async (req, res) => {
+app.post('/auth/google', noStore, rateLimit('auth-google', 20, 10 * 60 * 1000), asyncHandler(async (req, res) => {
   if (!isGoogleAuthConfigured()) {
     res.status(503).json({ error: 'Google authentication is not configured yet.' })
     return
@@ -354,15 +356,17 @@ app.post('/auth/google', noStore, rateLimit('auth-google', 20, 10 * 60 * 1000), 
   try {
     const user = await verifyGoogleCredential(credential)
     const token = createSessionToken(user)
+    logger.info('Google auth success', { userId: user.userId, email: user.email })
     res.json({
       token,
       user,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Google sign-in failed.'
+    logger.warn('Google auth failed', { error: message })
     res.status(401).json({ error: message })
   }
-})
+}))
 
 app.get('/auth/session', noStore, requireAuth, (req: AuthenticatedRequest, res) => {
   if (!req.authSession) {
@@ -399,10 +403,9 @@ app.use('/session/:userId/:sessionId/reveal', rateLimit('reveal', 30, 60 * 1000)
 app.use('/session/:userId/:sessionId/answer', rateLimit('answer', 120, 60 * 1000))
 
 // Dashboard stats endpoint
-app.get('/dashboard/:userId', async (req, res) => {
+app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
-  try {
-    const allSessions = await listAllSessions(userId)
+  const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
 
     // Total sessions
@@ -531,16 +534,12 @@ app.get('/dashboard/:userId', async (req, res) => {
       activityDays,
       progressInsights,
     })
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to compute dashboard stats' })
-  }
-})
+}))
 
 // In-progress session endpoint
-app.get('/sessions/in-progress/:userId', async (req, res) => {
+app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
-  try {
-    const allSessions = await listAllSessions(userId)
+  const allSessions = await listAllSessions(userId)
     const activeSessions = allSessions
       .filter((s) => s.status === 'active')
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
@@ -562,12 +561,9 @@ app.get('/sessions/in-progress/:userId', async (req, res) => {
     res.json({
       sessions,
     })
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to get in-progress sessions' })
-  }
-})
+}))
 
-app.get('/insights/:userId', async (req, res) => {
+app.get('/insights/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
   const allSessions = await listAllSessions(userId)
   const computed = buildInsightsPayloadFromSessions(allSessions)
@@ -584,9 +580,9 @@ app.get('/insights/:userId', async (req, res) => {
 
   const refreshed = await refreshInsightsFile(userId)
   res.json(refreshed)
-})
+}))
 
-app.post('/session/start', async (req, res) => {
+app.post('/session/start', asyncHandler(async (req, res) => {
   const userId = isGoogleAuthConfigured()
     ? ((req as AuthenticatedRequest).authSession?.userId ?? '')
     : String(req.body?.userId || '').trim()
@@ -606,6 +602,7 @@ app.post('/session/start', async (req, res) => {
   }
   const exists = await userProfileExists(userId)
   if (!exists) {
+    logger.warn('Session start failed: profile not found', { userId })
     res.status(404).json({ error: 'User profile not found' })
     return
   }
@@ -662,6 +659,7 @@ app.post('/session/start', async (req, res) => {
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
   }
+  logger.info('Session started', { userId, sessionId: session.id, subject: requestedSubject })
   res.json({
     sessionId: session.id,
     subject: session.subject,
@@ -671,9 +669,9 @@ app.post('/session/start', async (req, res) => {
     currentIndex: session.currentIndex,
     totalTokensUsed: session.totalTokensUsed,
   })
-})
+}))
 
-app.get('/users', async (_req, res) => {
+app.get('/users', asyncHandler(async (_req, res) => {
   if (isGoogleAuthConfigured()) {
     const authReq = _req as AuthenticatedRequest
     if (authReq.authSession) {
@@ -691,9 +689,9 @@ app.get('/users', async (_req, res) => {
     }
   }
   res.json({ users })
-})
+}))
 
-app.get('/session/:userId/:sessionId', async (req, res) => {
+app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const key = sessionKey(userId, sessionId)
   let session = sessions.get(key)
@@ -711,9 +709,9 @@ app.get('/session/:userId/:sessionId', async (req, res) => {
     answers: session.answers,
     totalTokensUsed: session.totalTokensUsed,
   })
-})
+}))
 
-app.post('/session/:userId/:sessionId/help', async (req, res) => {
+app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const questionIndex = Number(req.body?.questionIndex)
   const key = sessionKey(userId, sessionId)
@@ -764,9 +762,9 @@ app.post('/session/:userId/:sessionId/help', async (req, res) => {
     helpSource,
     totalTokensUsed: session.totalTokensUsed,
   })
-})
+}))
 
-app.post('/session/:userId/:sessionId/reveal', async (req, res) => {
+app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const questionIndex = Number(req.body?.questionIndex)
   const key = sessionKey(userId, sessionId)
@@ -813,9 +811,9 @@ app.post('/session/:userId/:sessionId/reveal', async (req, res) => {
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
   })
-})
+}))
 
-app.post('/session/:userId/:sessionId/answer', async (req, res) => {
+app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const questionIndex = Number(req.body?.questionIndex)
   const answerRaw = String(req.body?.answer ?? '')
@@ -954,9 +952,9 @@ app.post('/session/:userId/:sessionId/answer', async (req, res) => {
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
     totalTokensUsed: session.totalTokensUsed,
   })
-})
+}))
 
-app.post('/session/:userId/:sessionId/pause', async (req, res) => {
+app.post('/session/:userId/:sessionId/pause', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const questionIndex = Number(req.body?.questionIndex)
   const elapsedMs = Number(req.body?.elapsedMs || 0)
@@ -978,7 +976,7 @@ app.post('/session/:userId/:sessionId/pause', async (req, res) => {
   answerState.elapsedMs = Math.max(0, elapsedMs)
   await saveSession(session)
   res.json({ ok: true, answers: session.answers })
-})
+}))
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'aplc-server' })
@@ -1004,8 +1002,11 @@ if (fs.existsSync(clientDistDir)) {
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const message = err instanceof Error ? err.message : 'Unhandled server error'
-  console.error('Unhandled route error:', err)
-  res.status(500).json({ error: message })
+  const stack = err instanceof Error ? err.stack : undefined
+  logger.error('Unhandled route error', { error: message, stack })
+  if (!res.headersSent) {
+    res.status(500).json({ error: message })
+  }
 })
 
 export function resetInMemoryState(): void {
@@ -1014,12 +1015,49 @@ export function resetInMemoryState(): void {
 }
 
 export function startServer(listenPort = port) {
+  // Startup diagnostics
+  const DATA_ROOT = path.resolve(process.env.DATA_ROOT || path.resolve(process.cwd(), '../data'))
+  logger.info('Starting APLC server', {
+    port: listenPort,
+    nodeEnv: process.env.NODE_ENV,
+    googleAuth: isGoogleAuthConfigured(),
+    openAI: isOpenAIConfigured(),
+    dataRoot: DATA_ROOT,
+    corsOrigins: [...getAllowedOrigins()],
+  })
+
+  // Check data directory writability
+  try {
+    const testPath = path.join(DATA_ROOT, '.write-test')
+    fs.writeFileSync(testPath, 'ok')
+    fs.unlinkSync(testPath)
+    logger.info('Data directory writable', { dataRoot: DATA_ROOT })
+  } catch {
+    logger.error('Data directory NOT writable', { dataRoot: DATA_ROOT })
+  }
+
+  // Check user profiles
+  const usersDir = path.join(DATA_ROOT, 'users')
+  if (fs.existsSync(usersDir)) {
+    const userDirs = fs.readdirSync(usersDir).filter(d => fs.statSync(path.join(usersDir, d)).isDirectory())
+    for (const dir of userDirs) {
+      const profilePath = path.join(usersDir, dir, 'profile.json')
+      const hasProfile = fs.existsSync(profilePath)
+      logger.info(`User directory: ${dir}`, { hasProfile })
+      if (!hasProfile) {
+        logger.warn(`Missing profile.json for user: ${dir}`)
+      }
+    }
+  } else {
+    logger.warn('Users directory does not exist', { usersDir })
+  }
+
   const server = app.listen(listenPort, () => {
-    console.log(`APLC server running on port ${listenPort}`)
+    logger.info(`APLC server running on port ${listenPort}`)
   })
 
   server.on('error', (error) => {
-    console.error('Server runtime error:', error)
+    logger.error('Server runtime error', { error: error.message })
   })
 
   return server
@@ -1031,10 +1069,10 @@ if (process.env.NODE_ENV !== 'test') {
   startServer()
 
   process.on('unhandledRejection', (reason) => {
-    console.error('Unhandled promise rejection:', reason)
+    logger.error('Unhandled promise rejection', { reason: String(reason) })
   })
 
   process.on('uncaughtException', (error) => {
-    console.error('Uncaught exception:', error)
+    logger.error('Uncaught exception', { error: error.message, stack: error.stack })
   })
 }
