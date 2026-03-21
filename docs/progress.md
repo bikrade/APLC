@@ -41,3 +41,22 @@
 - Enhanced wrong-answer overlay: now has a white card with red glow border, shake animation, and radial background tint for more exciting visual feedback.
 - Session exit modal uses blur backdrop and spring-in animation for a polished feel.
 - Reliability hardening pass: added process-level error handlers, express error middleware, env-configurable client API base URL, and log-friendly local run scripts for backend (`dev:local`, `start:local`).
+- Division subject fully implemented with decimal, fraction, percentage, and mixed question types and division-specific help steps.
+- Reading subject fully implemented: "The Monsoon Clock" story (5 pages), reading page tracking with WPM calculation, free-text summary question with keyword-based comprehension + speed scoring.
+- Google OAuth 2.0 authentication: `POST /auth/google`, `GET /auth/session`, `GET /config/auth`. HMAC-SHA256 session tokens with 12-hour TTL. Single allowed email via `AUTH_ALLOWED_EMAIL`.
+- Auth middleware added to all user-scoped routes; 403 returned if token userId ≠ route userId.
+- Timing-safe signature comparison (`crypto.timingSafeEqual`) for session token verification.
+- Security headers added: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, COOP, CORP. Disabled `x-powered-by`.
+- IP-based rate limiting on auth (20/10min), help (30/60s), reveal (30/60s), answer (120/60s).
+- CORS restricted to explicit allowlist (dev ports + `CORS_ALLOWED_ORIGINS` + ngrok domain).
+- Request body limited to 32 KB; `Cache-Control: no-store` on auth routes.
+- Route parameter validation via regex patterns.
+- `totalTokensUsed` tracked per session from hint and explanation API calls.
+- Dockerfile added: multi-stage build (client → server → runtime), `node:22-bookworm-slim`, health check.
+- `.dockerignore` configured to exclude `.env` files, user data, and runtime data from images.
+- CI pipeline: GitHub Actions workflow runs builds + Vitest unit tests + Playwright E2E on every push.
+- Server test suite (`server/test/api.spec.ts`): covers auth, rate limiting, session lifecycle, reading flow, answer validation.
+- E2E test suite (`tests/e2e/app.spec.ts`): Multiplication wrong-answer flow, Division launch, Reading completion.
+- Azure OpenAI adapter scaffolded in `azureOpenAI.ts` (not yet wired in; OpenAI direct is the active provider).
+- `.gitignore` hardened: excludes `server/.env`, `data/users/`, `data/runtime/`, build artifacts.
+- Codebase sanitization and security audit completed before initial public push to GitHub.

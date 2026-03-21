@@ -23,7 +23,13 @@ Confidence in handling increasingly complex problems
 Put him in the top 5% percentile of in CIS Grade 6 students (think of similar IB schools)
 
 ## Scope for Phase 1
-Phase 1 is a dev prototype focused only on multiplication assessment and practice. It will include:
+Phase 1 began as a dev prototype focused on multiplication and has since expanded to cover three subjects:
+
+- **Multiplication**: Decimal, fraction, percentage, and mixed question types with rule-based and AI-generated questions.
+- **Division**: Same question types as Multiplication with division-specific help steps.
+- **Reading**: Story-based reading comprehension ("The Monsoon Clock", 5 pages) with keyword-based comprehension scoring and reading speed (WPM) evaluation.
+
+Phase 1 includes:
 
 A simple dev login (pre-filled, no authentication complexity)
 A modern dashboard showing practice stats, progress, and a GitHub-style activity heatmap

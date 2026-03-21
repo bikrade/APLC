@@ -43,6 +43,16 @@
 - Question variety and appropriate difficulty.
 - Explanation accuracy and supportive tone.
 
+## Reading Comprehension Evaluation
+
+Reading mode uses a rule-based scoring system (no AI call):
+
+- **Story**: "The Monsoon Clock" — 5 pages, ~5,000 words total.
+- **Flow**: 5 reading pages (auto-pass, records read time) + 1 free-text summary question (~100 words).
+- **Comprehension score** (0–10): keyword group coverage across 10 thematic groups (mira, dev, clock, notebook, tower, storm, warning, canal, town, teamwork). Each matched group = +1 point.
+- **Speed score** (0–10): based on average WPM across the 5 reading pages. Target range: 120–140 WPM.
+- **Overall score**: 65% comprehension + 35% speed. Score >= 7 = pass.
+
 ## Safety Notes
 
 - Avoid unsafe, biased, or discouraging language.
