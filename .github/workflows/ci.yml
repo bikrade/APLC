@@ -1,10 +1,14 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches:
       - '**'
   pull_request:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   test:
@@ -38,3 +42,63 @@ jobs:
 
       - name: Run builds and automated tests
         run: npm run ci
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image to ACR
+        run: |
+          az acr build \
+            --registry aplcregistry2026 \
+            --image aplc:${{ github.sha }} \
+            --image aplc:latest \
+            --file Dockerfile .
+
+      - name: Update Container App secrets
+        run: |
+          az containerapp secret set \
+            -n aplc-app -g aplc-rg \
+            --secrets \
+              "openai-key=${{ secrets.OPENAI_API_KEY }}" \
+              "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              "auth-email=${{ secrets.AUTH_ALLOWED_EMAIL }}" \
+              "session-secret=${{ secrets.AUTH_SESSION_SECRET }}"
+
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update \
+            -n aplc-app -g aplc-rg \
+            --image aplcregistry2026.azurecr.io/aplc:${{ github.sha }} \
+            --set-env-vars \
+              "PORT=3001" \
+              "OPENAI_MODEL=gpt-4o-mini" \
+              "DATA_ROOT=/app/data" \
+              "OPENAI_API_KEY=secretref:openai-key" \
+              "GOOGLE_CLIENT_ID=secretref:google-client-id" \
+              "AUTH_ALLOWED_EMAIL=secretref:auth-email" \
+              "AUTH_SESSION_SECRET=secretref:session-secret"
+
+      - name: Verify deployment health
+        run: |
+          sleep 20
+          FQDN=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv)
+          STATUS=$(curl -sf "https://$FQDN/health" | jq -r '.status')
+          if [ "$STATUS" != "ok" ]; then
+            echo "Health check failed: $STATUS"
+            exit 1
+          fi
+          echo "Deployment healthy at https://$FQDN"
