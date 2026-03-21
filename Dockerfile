@@ -27,9 +27,10 @@ RUN npm ci --omit=dev
 
 COPY --from=server-build /app/server/dist ./dist
 COPY --from=client-build /app/client/dist /app/client/dist
-COPY data /app/data
 
-RUN mkdir -p /app/data/users/adi/sessions
+RUN mkdir -p /app/data/users/adi/sessions && \
+    echo '{"id":"adi","name":"Adi","learningFocus":"placeholder","timezone":"Asia/Kolkata","notes":"Initial placeholder profile."}' \
+    > /app/data/users/adi/profile.json
 
 EXPOSE 3001
 
