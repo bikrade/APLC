@@ -9,6 +9,7 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "start:local": "node dist/index.js > ../data/server.log 2>&1",
+    "lint": "tsc --noEmit",
     "test": "npm run clean && vitest run"
   },
   "keywords": [],

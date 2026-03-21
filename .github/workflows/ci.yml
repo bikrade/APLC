@@ -40,8 +40,11 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run builds and automated tests
-        run: npm run ci
+      - name: Lint
+        run: npm run lint
+
+      - name: Build and test
+        run: npm run build && npm run test
 
   deploy:
     needs: test
