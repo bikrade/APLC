@@ -5,6 +5,10 @@ const DEFAULT_MODEL = 'gpt-4o-mini'
 
 const callStats: OpenAICallStat[] = []
 
+function isOpenAIDebugLoggingEnabled(): boolean {
+  return process.env.OPENAI_DEBUG_LOGS === 'true'
+}
+
 export function flushCallStats(): OpenAICallStat[] {
   return callStats.splice(0)
 }
@@ -47,9 +51,11 @@ async function chatCompletion(
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   }
   const usage = data.usage
-  console.log(
-    `[OpenAI:${label}] ✓ ${latencyMs}ms | model=${data.model ?? cfg.model} | tokens: prompt=${usage?.prompt_tokens ?? '?'} completion=${usage?.completion_tokens ?? '?'} total=${usage?.total_tokens ?? '?'} | finish=${data.choices?.[0]?.finish_reason ?? '?'} | id=${data.id ?? '?'}`,
-  )
+  if (isOpenAIDebugLoggingEnabled()) {
+    console.log(
+      `[OpenAI:${label}] ✓ ${latencyMs}ms | model=${data.model ?? cfg.model} | tokens: prompt=${usage?.prompt_tokens ?? '?'} completion=${usage?.completion_tokens ?? '?'} total=${usage?.total_tokens ?? '?'} | finish=${data.choices?.[0]?.finish_reason ?? '?'} | id=${data.id ?? '?'}`,
+    )
+  }
   callStats.push({
     label,
     latencyMs,
