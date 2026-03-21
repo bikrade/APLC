@@ -60,3 +60,21 @@
 - Azure OpenAI adapter scaffolded in `azureOpenAI.ts` (not yet wired in; OpenAI direct is the active provider).
 - `.gitignore` hardened: excludes `server/.env`, `data/users/`, `data/runtime/`, build artifacts.
 - Codebase sanitization and security audit completed before initial public push to GitHub.
+- Pushed to GitHub: `bikrade/APLC` (public repository).
+- All documentation files updated and committed.
+- CI pipeline fixed: changed `#!/bin/zsh` shebang to `#!/usr/bin/env bash` for Ubuntu runners.
+- **Azure Container Apps deployment**: resource group, ACR, Log Analytics, Container Apps environment, storage account, container app — all provisioned.
+- **CD pipeline**: OIDC federated credentials for GitHub Actions, 11 GitHub secrets, `production` environment, automated build → push → deploy → health check.
+- Lint step added to CI (ESLint for client + server).
+- Seed data directory (`seed/`) created with historical sessions for dashboard heatmap.
+- Heatmap year fix: `new Date().getFullYear()` instead of hardcoded 2026.
+- `minReplicas` set to 0 for cost savings (scale-to-zero).
+- **Azure Blob Storage**: persistent storage via managed identity (`DefaultAzureCredential`). Created `server/src/blobStorage.ts` adapter. Refactored `server/src/storage.ts` with dual-mode delegation (filesystem or blob). Uploaded seed data to blob container `userdata`.
+- **Application Insights**: `aplc-insights` resource created, `applicationinsights` Node.js SDK integrated with auto-collection. Import fixed for CJS compatibility (`import * as appInsights`).
+- **Health probes**: liveness (30s), readiness (10s), startup (5s) on `/health`.
+- **Azure Monitor Alerts**: `aplc-error-spike` (≥5 errors in 15min, severity 2), `aplc-restart-alert` (≥3 crashes in 15min, severity 1).
+- **Structured logging**: `server/src/logger.ts` with leveled logging; `requestLogger` middleware; `asyncHandler` on all routes.
+- Docker image cleaned: removed `COPY seed/ /app/data/` — no user data baked into image.
+- CORS_ALLOWED_ORIGINS added to CI/CD workflow env vars.
+- Google login fix: restored secret references after YAML-based update stripped env vars.
+- Session persistence verified: data survives container restarts, redeployments, and scale-to-zero events via Azure Blob Storage.

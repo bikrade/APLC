@@ -19,10 +19,21 @@
 
 ## Folder Structure
 
+### Local (filesystem mode)
+
 - `data/users/<userId>/profile.json`
 - `data/users/<userId>/sessions/<sessionId>.json`
 - `data/users/<userId>/insights.txt`
 - `data/runtime/` — PID files and logs for local helper scripts (gitignored)
+
+### Production (Azure Blob Storage mode)
+
+- Storage account: `aplcfiles2026`, blob container: `userdata`
+- `users/<userId>/profile.json`
+- `users/<userId>/sessions/<sessionId>.json`
+- `users/<userId>/insights.txt`
+- Authentication: `DefaultAzureCredential` (system-assigned managed identity, no shared keys)
+- Mode auto-selected: if `AZURE_STORAGE_ACCOUNT` env var is set, all storage operations use Blob Storage; otherwise filesystem
 
 ## Naming Conventions
 
@@ -32,6 +43,7 @@
 
 ## Future Migration Notes
 
-- Current phase intentionally avoids a database and uses filesystem JSON storage.
-- If cloud constraints require DB later, first-choice option is Azure SQL for simple Azure setup.
-- Keep API contract stable and introduce a storage adapter when migrating.
+- Local development uses filesystem JSON storage; production uses Azure Blob Storage with managed identity.
+- Storage adapter pattern (`server/src/storage.ts`) delegates to either `blobStorage.ts` or filesystem functions based on `AZURE_STORAGE_ACCOUNT` env var.
+- If cloud constraints require a database later, first-choice option is Azure SQL for simple Azure setup.
+- Keep API contract stable and introduce additional storage adapters as needed.

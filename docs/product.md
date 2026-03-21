@@ -105,8 +105,13 @@ Adi completes multiple questions → session data is saved locally → next sess
 - A progress bar and live score are always visible at the top of the session screen.
 
 ## Observability
+- **Application Insights** (`aplc-insights`): auto-collects HTTP requests, dependencies, exceptions, and performance metrics.
+- **Log Analytics** (`aplc-logs`): centralized log sink for Container Apps system logs and Application Insights telemetry.
+- **Structured logging**: leveled logging (info, warn, error) with timestamps; request logger middleware logs every HTTP request.
+- **Health probes**: liveness (30s), readiness (10s), startup (5s) on `/health`.
+- **Azure Monitor Alerts**: error spike (≥5 errors in 15min) and container restart (≥3 in 15min).
 - All OpenAI API calls are logged to console with latency, model, token usage, and finish reason.
-- Structured filesystem logs (YYYYMMDDHHMMSS.json) capture questions, answers, results, and OpenAI call stats.
+- Startup diagnostics log: reports status of Google auth, Blob Storage, and App Insights configuration.
 
 ## Success Metrics
 Adi uses the app consistently (daily or near-daily usage)

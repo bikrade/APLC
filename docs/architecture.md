@@ -36,12 +36,14 @@
 
 ## Storage
 
-- Filesystem-first persistence via JSON files.
-- `data/users/<userId>/profile.json` for user profile.
-- `data/users/<userId>/sessions/<sessionId>.json` for session history.
-- `data/logs/YYYYMMDDHHMMSS.json` for structured activity logs (in progress).
-- No database dependency for current prototype.
-- If DB becomes necessary later, prefer Azure SQL first for ease of Azure setup.
+- Dual-mode storage layer: filesystem (local dev) or Azure Blob Storage (production).
+- Mode selected automatically via `AZURE_STORAGE_ACCOUNT` env var — if set, all storage operations delegate to Blob Storage; otherwise, filesystem JSON is used.
+- `data/users/<userId>/profile.json` — user profile (filesystem) or `users/<userId>/profile.json` (blob).
+- `data/users/<userId>/sessions/<sessionId>.json` — session history (filesystem) or `users/<userId>/sessions/<sessionId>.json` (blob).
+- `data/users/<userId>/insights.txt` — performance insights (filesystem) or `users/<userId>/insights.txt` (blob).
+- Azure Blob Storage uses `DefaultAzureCredential` (system-assigned managed identity in production — no shared keys).
+- Storage account: `aplcfiles2026`, blob container: `userdata`.
+- No database dependency. If DB becomes necessary later, prefer Azure SQL for ease of Azure setup.
 
 ## Local Development
 
@@ -51,9 +53,12 @@
 
 ## Azure Deployment
 
-- Current design is cloud-portable but optimized for local prototype speed.
-- Future Azure deployment can keep same API surface while swapping storage layer.
-- If filesystem persistence is insufficient in Azure runtime, add a storage adapter (without changing UI flow).
+- Deployed to **Azure Container Apps** (Consumption tier, East US).
+- Scale-to-zero: `minReplicas: 0`, `maxReplicas: 1` — no cost when idle.
+- Data persists in **Azure Blob Storage** via managed identity (no filesystem dependency in production).
+- Docker image is data-free — no seed data baked in; all user data lives in Blob Storage.
+- Container Registry: `aplcregistry2026` (Basic tier).
+- HTTPS with built-in TLS termination at `aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io`.
 
 ## UX Enhancements
 
@@ -65,9 +70,13 @@
 
 ## Observability
 
+- **Application Insights** (`aplc-insights`): auto-collects HTTP requests, dependencies, exceptions, and performance metrics via `applicationinsights` Node.js SDK.
+- **Log Analytics** (`aplc-logs`): centralized log sink for Container Apps system logs and Application Insights telemetry.
+- **Structured logging**: `server/src/logger.ts` provides leveled logging (info, warn, error) with timestamps. Request logger middleware logs method, URL, status, and duration for every HTTP request.
+- **Health probes**: liveness (30s interval, `/health`), readiness (10s, `/health`), startup (5s, `/health`).
+- **Alerts**: `aplc-error-spike` (≥5 errors in 15min, severity 2) and `aplc-restart-alert` (≥3 container crashes in 15min, severity 1).
 - Console logging for every OpenAI call: `[OpenAI:<label>] ✓ <latency>ms | model=... | tokens: prompt=... completion=... total=... | finish=... | id=...`
 - Labels identify call type: `questions`, `hints`, `explanation`.
-- Filesystem logging (in progress): structured JSON logs with YYYYMMDDHHMMSS-named files capturing session activity and OpenAI stats.
 
 ## Subjects
 
@@ -90,10 +99,14 @@
 
 - **Unit / integration**: Vitest + Supertest (`server/test/api.spec.ts`). Covers auth, rate limiting, session lifecycle, reading flow, answer validation.
 - **E2E**: Playwright + Chromium (`tests/e2e/app.spec.ts`). Covers Multiplication wrong-answer flow, Division session launch, Reading flow completion.
-- **CI**: GitHub Actions workflow (`.github/workflows/ci.yml`) runs build + all tests on every push.
+- **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`):
+  - **CI** (all branches): lint, build, Vitest unit tests, Playwright E2E tests.
+  - **CD** (main only): OIDC Azure login → ACR image build → Container App update → health check verification.
+  - Zero-downtime deployment with `/health` probe validation.
 
 ## Risks
 
-- Filesystem persistence in some cloud runtimes may require mounted durable storage.
-- Single-process in-memory cache can diverge from disk if multi-instance scaling is introduced.
+- Single-process in-memory cache can diverge from Blob Storage if multi-instance scaling is introduced (current max replicas: 1).
 - Azure OpenAI adapter exists but is not yet wired into the main flow.
+- Scale-to-zero causes cold starts (~10-15s) on first request after idle period.
+- Blob Storage latency is higher than local filesystem; acceptable for current single-user usage.

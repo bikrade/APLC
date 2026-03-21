@@ -67,4 +67,5 @@ Reading mode uses a rule-based scoring system (no AI call):
 - Fallback to rule-based questions and static explanations on any AI failure.
 - Switched from Azure OpenAI to OpenAI API directly (simpler config: just OPENAI_API_KEY + optional OPENAI_MODEL).
 - All OpenAI calls now emit structured console logs with latency, token counts, model, and finish reason.
-- Call-stat accumulator captures per-call metrics in memory for downstream filesystem logging.
+- Call-stat accumulator captures per-call metrics in memory for downstream logging.
+- Application Insights auto-collects outbound HTTP calls (including OpenAI API requests) for end-to-end tracing.

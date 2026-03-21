@@ -1,24 +1,67 @@
 # Deployment
 
-APLC is packaged to run as a single server process:
+APLC is deployed to **Azure Container Apps** — a serverless container platform with built-in HTTPS, scale-to-zero, and minimal ops overhead. It can also run locally as a single server process.
 
-- the Express server serves the built React frontend
-- the same server exposes all API routes
-- JSON session data lives on disk under `data/`
+## Production Architecture
 
-## Recommended shape
+| Component | Azure Service | Details |
+|-----------|---------------|---------|
+| App runtime | Azure Container Apps | Consumption (scale-to-zero, minReplicas: 0, maxReplicas: 1) |
+| Container image | Azure Container Registry | `aplcregistry2026` (Basic, ~$5/mo) |
+| Persistent storage | Azure Blob Storage | `aplcfiles2026` / `userdata` (managed identity, no shared keys) |
+| Telemetry | Application Insights | `aplc-insights` (auto-collect requests, dependencies, exceptions) |
+| Logging | Log Analytics Workspace | `aplc-logs` (free tier, 5 GB/mo) |
+| Alerts | Azure Monitor | Error spike (≥5 in 15min) + container restart (≥3 in 15min) |
+| Secrets | Container Apps secrets | Built-in (referenced via `secretref:`) |
+| Auth | System-assigned Managed Identity | Storage Blob Data Contributor role on storage account |
 
-Use a single container with a persistent disk mounted at:
+### App URL
 
-```text
-/app/data
+```
+https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io
 ```
 
-That matches the app's filesystem storage path in production.
+### Health Probes
 
-## Required environment variables
+| Probe | Interval | Path |
+|-------|----------|------|
+| Liveness | 30s | `/health` |
+| Readiness | 10s | `/health` |
+| Startup | 5s | `/health` |
 
-Set these on the host:
+## Docker Image
+
+Multi-stage build (`node:22-bookworm-slim`):
+
+1. Build React client → `client/dist`
+2. Build server TypeScript → `server/dist`
+3. Runtime stage: production deps only, serves API + static frontend
+
+The image contains **no user data** — all data lives in Azure Blob Storage in production.
+
+```bash
+docker build -t aplc .
+```
+
+## Required Environment Variables
+
+### Production (set on Container App)
+
+```env
+PORT=3001
+OPENAI_MODEL=gpt-4o-mini
+DATA_ROOT=/app/data
+OPENAI_API_KEY=secretref:openai-key
+GOOGLE_CLIENT_ID=secretref:google-client-id
+AUTH_ALLOWED_EMAIL=secretref:auth-email
+AUTH_SESSION_SECRET=secretref:session-secret
+AZURE_STORAGE_ACCOUNT=aplcfiles2026
+AZURE_STORAGE_CONTAINER=userdata
+APPLICATIONINSIGHTS_CONNECTION_STRING=<connection-string>
+CORS_ALLOWED_ORIGINS=https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io
+```
+
+### Local development (`server/.env`)
 
 ```env
 PORT=3001
@@ -45,28 +88,94 @@ Notes:
 
 - `VITE_API_BASE_URL` is not required in production because the frontend uses same-origin APIs.
 - `VITE_GOOGLE_CLIENT_ID` is not required in production because the frontend reads the Google client ID from `/config/auth` at runtime.
-- `NGROK_DOMAIN` is optional; it keeps a fixed public ngrok URL. Without it, free ngrok URLs change on restart.
-- `CORS_ALLOWED_ORIGINS` is a comma-separated list of additional origins; localhost dev origins are always allowed.
-- `DATA_ROOT` overrides the default data directory (`../../data` relative to server); useful for Docker or test environments.
+- When `AZURE_STORAGE_ACCOUNT` is set, all storage operations use Azure Blob Storage; otherwise, filesystem JSON storage is used (local dev).
 - Azure OpenAI vars are optional; the adapter exists but is not wired into the main flow.
 
-## CI
+## CI/CD Pipeline
 
-GitHub Actions runs on every push (`.github/workflows/ci.yml`):
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
+
+### CI (all branches)
 
 1. Install dependencies (root, client, server)
 2. Install Playwright Chromium
-3. Build client and server
-4. Run server unit/integration tests (Vitest)
-5. Run E2E tests (Playwright)
+3. Lint (ESLint for client + server)
+4. Build client and server
+5. Run server unit/integration tests (Vitest)
+6. Run E2E tests (Playwright)
 
-## Build the image
+### CD (main branch only)
+
+1. **Azure Login** via OIDC (federated credentials, no stored secrets)
+2. **ACR Build** — Docker image built in ACR (`aplc:<sha>` + `aplc:latest`)
+3. **Update secrets** — syncs Container Apps secrets from GitHub secrets
+4. **Deploy** — updates Container App with new image + env vars
+5. **Health check** — verifies `/health` returns `{"status":"ok"}`
+
+### GitHub Secrets (11)
+
+| Secret | Purpose |
+|--------|---------|
+| `AZURE_CLIENT_ID` | Service principal app ID for OIDC |
+| `AZURE_TENANT_ID` | Azure AD tenant |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription |
+| `REGISTRY_LOGIN_SERVER` | `aplcregistry2026.azurecr.io` |
+| `REGISTRY_USERNAME` | ACR admin username |
+| `REGISTRY_PASSWORD` | ACR admin password |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `AUTH_ALLOWED_EMAIL` | Allowed user email |
+| `AUTH_SESSION_SECRET` | HMAC session signing secret |
+| `APPINSIGHTS_CONNECTION_STRING` | Application Insights connection |
+
+GitHub environment: `production` (required for CD job).
+
+## Azure Resources
+
+| Resource | Name | Region |
+|----------|------|--------|
+| Resource Group | `aplc-rg` | East US |
+| Container Registry | `aplcregistry2026` | East US |
+| Log Analytics Workspace | `aplc-logs` | East US |
+| Application Insights | `aplc-insights` | East US |
+| Container Apps Environment | `aplc-env` | East US |
+| Storage Account | `aplcfiles2026` | East US |
+| Blob Container | `userdata` | — |
+| Container App | `aplc-app` | East US |
+| Alert: Error Spike | `aplc-error-spike` | East US |
+| Alert: Restart | `aplc-restart-alert` | East US |
+
+## Manual Deployment
 
 ```bash
-docker build -t aplc .
+# Build and push image
+az acr build --registry aplcregistry2026 --image aplc:latest --file Dockerfile .
+
+# Update container app
+az containerapp update \
+  -n aplc-app -g aplc-rg \
+  --image aplcregistry2026.azurecr.io/aplc:latest
 ```
 
-## Run locally like production
+## Scaling Considerations
+
+- **Scale-to-zero** (`minReplicas: 0`): no compute cost when idle; ~10-15s cold start on first request.
+- **Single replica** (`maxReplicas: 1`): sufficient for single-user usage; avoids in-memory cache divergence.
+- All persistent data is in Azure Blob Storage — survives container restarts, redeployments, and scale events.
+- If multi-instance scaling is needed, all filesystem-dependent code paths are already bypassed when Blob Storage is configured.
+
+## Estimated Monthly Cost
+
+| Scenario | Cost |
+|----------|------|
+| Scale-to-zero (current, minReplicas: 0) | ~$7–8/mo |
+| Always-on (minReplicas: 1, 24×7) | ~$20–22/mo |
+
+Main cost drivers: ACR Basic ($5), ACA compute ($0–14), alerts (~$1.50). Blob Storage, Log Analytics, and App Insights are effectively free at this usage level.
+
+## Run Locally
+
+### Docker
 
 ```bash
 docker run \
@@ -77,118 +186,32 @@ docker run \
   aplc
 ```
 
-Then open:
-
-```text
-http://localhost:3001
-```
-
-## Data persistence
-
-Mount a persistent volume to `/app/data`.
-
-Without that mount, session files and insights will be lost on redeploy or container restart.
-
-## Azure Deployment (Recommended)
-
-APLC is deployed to **Azure Container Apps** — a serverless container platform with built-in HTTPS, scale-to-zero, and minimal ops overhead.
-
-### Architecture
-
-| Component | Azure Service | SKU / Tier |
-|-----------|---------------|------------|
-| App runtime | Azure Container Apps | Consumption (free tier) |
-| Container image | Azure Container Registry | Basic (~$5/mo) |
-| Persistent storage | Azure Files (SMB share) | Standard LRS |
-| Logging | Log Analytics Workspace | Free tier (5 GB/mo) |
-| Secrets | Container Apps secrets | Built-in |
-
-### Why Container Apps
-
-- **Scale to zero** — no cost when idle; free tier covers 2M requests/month.
-- **Built-in HTTPS** — TLS termination and custom domain support out of the box.
-- **Docker-native** — runs the existing `Dockerfile` with zero changes.
-- **Azure Files mount** — persistent `/app/data` survives redeployments.
-- **Estimated cost** — ~$5–6/month for a prototype (mostly ACR Basic).
-
-### Why NOT Other Options
-
-| Alternative | Reason to Skip |
-|-------------|----------------|
-| Azure Static Web Apps + Functions | Frontend is served by Express (same-origin), splitting adds complexity with no gain. |
-| Azure App Service | Works but doesn't scale to zero — costs more at low traffic. |
-| Azure Kubernetes Service (AKS) | Overkill for a single-container app. |
-| Azure VM | Unmanaged, no auto-TLS, no auto-scale. |
-
-### Resources Created
-
-| Resource | Name |
-|----------|------|
-| Resource Group | `aplc-rg` |
-| Container Registry | `aplcregistry<unique>` |
-| Log Analytics Workspace | `aplc-logs` |
-| Container Apps Environment | `aplc-env` |
-| Storage Account + File Share | `aplcstorage<unique>` / `aplcdata` |
-| Container App | `aplc-app` |
-
-### Secrets
-
-All secrets are stored as Container Apps secrets (never in the image):
-
-- `OPENAI_API_KEY`
-- `GOOGLE_CLIENT_ID`
-- `AUTH_ALLOWED_EMAIL`
-- `AUTH_SESSION_SECRET`
-
-### CD Pipeline
-
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main`:
-
-1. **CI** — build + test (Vitest + Playwright)
-2. **CD** — build Docker image → push to ACR → update Container App revision
-3. Zero-downtime rollout using `/health` probe
-
-The CD job requires these GitHub repository secrets:
-
-- `AZURE_CREDENTIALS` — service principal JSON for `az login`
-- `REGISTRY_LOGIN_SERVER` — e.g. `aplcregistry<unique>.azurecr.io`
-- `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` — ACR admin credentials
-- `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAIL`, `AUTH_SESSION_SECRET`
-
-### Manual Deployment
+### Development mode
 
 ```bash
-# Build and push image
-az acr login --name <registry-name>
-docker build -t <registry-name>.azurecr.io/aplc:latest .
-docker push <registry-name>.azurecr.io/aplc:latest
+# Backend
+cd server && npm install && npm run dev
 
-# Update container app
-az containerapp update \
-  -n aplc-app -g aplc-rg \
-  --image <registry-name>.azurecr.io/aplc:latest
+# Frontend (separate terminal)
+cd client && npm install && npm run dev
 ```
 
-### Scaling Considerations
-
-The current filesystem JSON storage works with Azure Files for a **single-replica** app. If multi-instance scaling is needed in the future, swap the storage layer to Azure Cosmos DB or Azure SQL — the architecture doc notes this as a known risk.
+Open `http://localhost:5173` (dev) or `http://localhost:3001` (Docker/production).
 
 ## Other Hosting Options
 
-This app also works on any host that supports one Node/Docker service, a persistent disk, and environment variables:
+This app also works on any host that supports one Node/Docker service and environment variables:
 
-- Render web service + persistent disk
+- Render web service
 - Fly.io app + volume
 - Railway service + volume
 - A small VM with Docker and a reverse proxy
 
-## Local always-on helper scripts
+Note: without `AZURE_STORAGE_ACCOUNT` set, data falls back to filesystem (requires a persistent volume mount at `/app/data`).
 
-From the project root:
+## Local Helper Scripts
 
 ```bash
-./aplc-up.sh
-./aplc-status.sh
+./aplc-up.sh    # rebuild and start local server + ngrok
+./aplc-status.sh # check status
 ```
-
-These are useful after a laptop reboot or any time you want to restart the local single-server app and ngrok tunnel.

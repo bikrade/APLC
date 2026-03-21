@@ -88,5 +88,7 @@ Rate limiting is IP-based. Exceeding the limit returns 429 with a `Retry-After` 
 
 ## Versioning Notes
 
-- Phase 1 is unversioned for rapid local iteration.
-- Introduce `/api/v1` prefix before public/cloud rollout.
+- Phase 1 is unversioned for rapid iteration.
+- App is deployed to Azure Container Apps at `https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io`.
+- Same API surface serves both local development and production.
+- CORS restricted to explicit origin allowlist (localhost dev ports + configured `CORS_ALLOWED_ORIGINS`).
