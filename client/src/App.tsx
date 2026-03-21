@@ -278,6 +278,8 @@ function defaultInsightsMessage(): InsightResponse {
 }
 
 /* ── Activity Heatmap Component ────────────────────────────── */
+const HEATMAP_YEAR = new Date().getFullYear()
+
 function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -293,8 +295,8 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
 
   const getWeekCountForWindow = (monthCount: number): number => {
     const startMonth = getWindowStartMonth(monthCount)
-    const startDate = new Date(2026, startMonth, 1)
-    const endDate = new Date(2026, startMonth + monthCount, 0)
+    const startDate = new Date(HEATMAP_YEAR, startMonth, 1)
+    const endDate = new Date(HEATMAP_YEAR, startMonth + monthCount, 0)
     const startGridDate = new Date(startDate)
     startGridDate.setDate(startDate.getDate() - startDate.getDay())
     const endGridDate = new Date(endDate)
@@ -315,8 +317,8 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   }, [containerWidth])
 
   const startMonth = getWindowStartMonth(monthsToShow)
-  const startDate = new Date(2026, startMonth, 1)
-  const endDate = new Date(2026, startMonth + monthsToShow, 0)
+  const startDate = new Date(HEATMAP_YEAR, startMonth, 1)
+  const endDate = new Date(HEATMAP_YEAR, startMonth + monthsToShow, 0)
   const startGridDate = new Date(startDate)
   startGridDate.setDate(startDate.getDate() - startDate.getDay())
   const endGridDate = new Date(endDate)
@@ -354,7 +356,7 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   }
 
   const visibleMonths = Array.from({ length: monthsToShow }, (_, index) =>
-    new Date(2026, startMonth + index, 1).toLocaleString('en-US', { month: 'short' }),
+    new Date(HEATMAP_YEAR, startMonth + index, 1).toLocaleString('en-US', { month: 'short' }),
   )
   const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', '']
   const trackWidth = weeks.length * cellSize + Math.max(weeks.length - 1, 0) * cellGap

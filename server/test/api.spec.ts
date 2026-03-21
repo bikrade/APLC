@@ -240,4 +240,51 @@ describe('APLC backend', () => {
     expect(sessionFiles.body.sessions).toHaveLength(1)
     expect(sessionFiles.body.sessions[0].sessionId).toBe(newerSession.id)
   })
+
+  test('dashboard returns activityDays from all sessions including historical', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const makeSession = (id: string, startedAt: string, status: 'active' | 'completed'): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Multiplication',
+      status,
+      startedAt,
+      currentIndex: status === 'completed' ? 1 : 0,
+      questions: [{
+        id: 'q-1', prompt: '2 × 3', type: 'decimal', answer: 6,
+        tolerance: 0.01, helpSteps: [], explanation: '', generated: true,
+      }],
+      answers: [{
+        questionId: 'q-1', questionIndex: 0,
+        completed: status === 'completed', usedHelp: false, usedReveal: false,
+        elapsedMs: 5000, isCorrect: true,
+      }],
+      totalTokensUsed: 0,
+      ...(status === 'completed' ? { completedAt: startedAt } : {}),
+    })
+
+    // Sessions on 3 different days
+    await writeSession(ctx.dataRoot, makeSession('20260315-100000-Multiplication', '2026-03-15T10:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260320-170000-Multiplication', '2026-03-20T17:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260320-180000-Multiplication', '2026-03-20T18:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260321-140000-Multiplication', '2026-03-21T14:00:00.000Z', 'active'))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+    expect(res.status).toBe(200)
+
+    // All 4 sessions contribute to activityDays
+    expect(res.body.activityDays).toHaveLength(4)
+    expect(res.body.activityDays).toContain('2026-03-15')
+    expect(res.body.activityDays).toContain('2026-03-20')
+    expect(res.body.activityDays).toContain('2026-03-21')
+
+    // 2 sessions on March 20
+    expect(res.body.activityDays.filter((d: string) => d === '2026-03-20')).toHaveLength(2)
+
+    // Stats from 3 completed sessions only
+    expect(res.body.totalSessions).toBe(4)
+    expect(res.body.overallAccuracy).toBe(100)
+  })
 })

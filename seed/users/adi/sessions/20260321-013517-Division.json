@@ -1,0 +1,314 @@
+{
+  "id": "20260321-013517-Division",
+  "userId": "adi",
+  "subject": "Division",
+  "status": "completed",
+  "startedAt": "2026-03-20T17:35:17.889Z",
+  "currentIndex": 11,
+  "questions": [
+    {
+      "id": "q-1",
+      "prompt": "14.5 ÷ 5",
+      "type": "decimal",
+      "answer": 2.9,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Think of the matching multiplication fact: 5 × ? = 14.5",
+        "Work out how many groups of 5 fit into 14.5.",
+        "Place the decimal point carefully in the quotient."
+      ],
+      "explanation": "14.5 ÷ 5 = 2.9.",
+      "generated": true
+    },
+    {
+      "id": "q-2",
+      "prompt": "2/3 ÷ 3/5",
+      "type": "fraction",
+      "answer": 1.1111,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Keep 2/3 the same.",
+        "Flip 3/5 to 5/3 and multiply.",
+        "Convert the result to a decimal if needed."
+      ],
+      "explanation": "2/3 ÷ 3/5 = 1.1111.",
+      "generated": true
+    },
+    {
+      "id": "q-3",
+      "prompt": "27.5 ÷ 50%",
+      "type": "percentage",
+      "answer": 55,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Convert 50% to a decimal: 0.5.",
+        "Think: 27.5 ÷ 0.5.",
+        "Check by multiplying your answer by the decimal divisor."
+      ],
+      "explanation": "27.5 ÷ 50% = 55.",
+      "generated": true
+    },
+    {
+      "id": "q-4",
+      "prompt": "3.2 ÷ 4/4",
+      "type": "mixed",
+      "answer": 3.2,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Change ÷ 4/4 into × 4/4.",
+        "Multiply 3.2 by 1.",
+        "Round reasonably if needed."
+      ],
+      "explanation": "3.2 ÷ 4/4 = 3.2.",
+      "generated": true
+    },
+    {
+      "id": "q-5",
+      "prompt": "7.2 ÷ 3.6",
+      "type": "decimal",
+      "answer": 2,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Think of the matching multiplication fact: 3.6 × ? = 7.2",
+        "Work out how many groups of 3.6 fit into 7.2.",
+        "Place the decimal point carefully in the quotient."
+      ],
+      "explanation": "7.2 ÷ 3.6 = 2.",
+      "generated": true
+    },
+    {
+      "id": "q-6",
+      "prompt": "1/2 ÷ 3/4",
+      "type": "fraction",
+      "answer": 0.6667,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Keep 1/2 the same.",
+        "Flip 3/4 to 4/3 and multiply.",
+        "Convert the result to a decimal if needed."
+      ],
+      "explanation": "1/2 ÷ 3/4 = 0.6667.",
+      "generated": true
+    },
+    {
+      "id": "q-7",
+      "prompt": "20 ÷ 50%",
+      "type": "percentage",
+      "answer": 40,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Convert 50% to a decimal: 0.5.",
+        "Think: 20 ÷ 0.5.",
+        "Check by multiplying your answer by the decimal divisor."
+      ],
+      "explanation": "20 ÷ 50% = 40.",
+      "generated": true
+    },
+    {
+      "id": "q-8",
+      "prompt": "1.9 ÷ 3/3",
+      "type": "mixed",
+      "answer": 1.9,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Change ÷ 3/3 into × 3/3.",
+        "Multiply 1.9 by 1.",
+        "Round reasonably if needed."
+      ],
+      "explanation": "1.9 ÷ 3/3 = 1.9.",
+      "generated": true
+    },
+    {
+      "id": "q-9",
+      "prompt": "7.44 ÷ 3.1",
+      "type": "decimal",
+      "answer": 2.4,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Think of the matching multiplication fact: 3.1 × ? = 7.44",
+        "Work out how many groups of 3.1 fit into 7.44.",
+        "Place the decimal point carefully in the quotient."
+      ],
+      "explanation": "7.44 ÷ 3.1 = 2.4.",
+      "generated": true
+    },
+    {
+      "id": "q-10",
+      "prompt": "3/4 ÷ 4/5",
+      "type": "fraction",
+      "answer": 0.9375,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Keep 3/4 the same.",
+        "Flip 4/5 to 5/4 and multiply.",
+        "Convert the result to a decimal if needed."
+      ],
+      "explanation": "3/4 ÷ 4/5 = 0.9375.",
+      "generated": true
+    },
+    {
+      "id": "q-11",
+      "prompt": "27.5 ÷ 50%",
+      "type": "percentage",
+      "answer": 55,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Convert 50% to a decimal: 0.5.",
+        "Think: 27.5 ÷ 0.5.",
+        "Check by multiplying your answer by the decimal divisor."
+      ],
+      "explanation": "27.5 ÷ 50% = 55.",
+      "generated": true
+    },
+    {
+      "id": "q-12",
+      "prompt": "5.333 ÷ 4/3",
+      "type": "mixed",
+      "answer": 4,
+      "tolerance": 0.01,
+      "helpSteps": [
+        "Change ÷ 4/3 into × 3/4.",
+        "Multiply 5.333 by 0.75.",
+        "Round reasonably if needed."
+      ],
+      "explanation": "5.333 ÷ 4/3 = 4.",
+      "generated": true
+    }
+  ],
+  "answers": [
+    {
+      "questionId": "q-1",
+      "questionIndex": 0,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 28002,
+      "userAnswer": 2.9,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-2",
+      "questionIndex": 1,
+      "completed": true,
+      "usedHelp": true,
+      "usedReveal": false,
+      "elapsedMs": 17557,
+      "userAnswer": 1.1111111111111112,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-3",
+      "questionIndex": 2,
+      "completed": true,
+      "usedHelp": true,
+      "usedReveal": false,
+      "elapsedMs": 321672,
+      "userAnswer": 55,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-4",
+      "questionIndex": 3,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 127814,
+      "userAnswer": 3.2,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-5",
+      "questionIndex": 4,
+      "completed": true,
+      "usedHelp": true,
+      "usedReveal": false,
+      "elapsedMs": 494717,
+      "userAnswer": 2,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-6",
+      "questionIndex": 5,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 290798,
+      "userAnswer": 0.6666666666666666,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-7",
+      "questionIndex": 6,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 144140,
+      "userAnswer": 40,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-8",
+      "questionIndex": 7,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 107682,
+      "userAnswer": 1.9,
+      "isCorrect": true,
+      "selfRating": 3
+    },
+    {
+      "questionId": "q-9",
+      "questionIndex": 8,
+      "completed": true,
+      "usedHelp": true,
+      "usedReveal": false,
+      "elapsedMs": 809555,
+      "userAnswer": 2.4,
+      "isCorrect": true,
+      "selfRating": 5
+    },
+    {
+      "questionId": "q-10",
+      "questionIndex": 9,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 175531,
+      "userAnswer": 0.9375,
+      "isCorrect": true,
+      "selfRating": 5
+    },
+    {
+      "questionId": "q-11",
+      "questionIndex": 10,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 279202,
+      "userAnswer": 55,
+      "isCorrect": true,
+      "selfRating": 5
+    },
+    {
+      "questionId": "q-12",
+      "questionIndex": 11,
+      "completed": true,
+      "usedHelp": false,
+      "usedReveal": false,
+      "elapsedMs": 115053,
+      "userAnswer": 3.99975,
+      "isCorrect": true,
+      "selfRating": 5
+    }
+  ],
+  "totalTokensUsed": 2427,
+  "completedAt": "2026-03-21T04:40:04.998Z"
+}
