@@ -33,7 +33,7 @@ Phase 1 includes:
 
 A simple dev login (pre-filled, no authentication complexity)
 A modern dashboard showing practice stats, progress, and a GitHub-style activity heatmap
-A visible daily practice tracker showing how much time Adi spent yesterday and how much he has spent today toward a 60-minute habit goal
+A visible daily practice tracker showing how much time Adi spent yesterday and how much he has spent today toward a profile-driven habit goal
 A single integrated learning flow across Multiplication, Division, and Reading
 Let him start a session that will include 10-15 questions (similar lesson concept as Duolingo)
 Before each new session, let him choose either a Guided Session or a Quiz Session
@@ -45,7 +45,7 @@ Answer input and validation
 Tracking time spent per question
 Saving all session data locally in JSON files
 Engaging, Duolingo-style UI with animated feedback, confetti for correct answers, and encouraging animations for incorrect answers
-Landing-page learning coach with weekly goals, mastery tracking, revisit recommendations, and parent review notes
+Landing-page learning coach with a best next step, mastery tracking, compact insight guidance, and parent review notes
 Session-end coaching cards that celebrate wins, identify one growth target, and suggest the next short practice move
 
 This phase still avoids a full recommendation engine and heavy analytics dashboards, but it now includes live adaptive behavior across multiplication, division, and reading.
@@ -84,8 +84,8 @@ Real authentication will be done at the absolute end only the product is ready t
 Bring in an element of past performance influence future question in Phase 1 itself
 When difficulty changes, tell Adi clearly and supportively so he understands why the app is adjusting
 For reading, treat `170 WPM` as the target pace, reward reaching that pace on speed score, but warn and verify comprehension when pace climbs meaningfully above it
-The home experience should include a visible weekly learning path, habit signals, subject mastery states, a revisit queue for weak spots, and a compact parent review section on the same landing page
-The home experience should also show a simple, motivating daily-practice progress bar for yesterday and today so Adi can build a 60-minute daily habit
+The home experience should include a visible best next step, subject mastery states, detailed insight guidance, and a compact parent review section on the same landing page
+The home experience should also show a simple, motivating daily-practice progress bar for yesterday and today so Adi can build a profile-driven daily habit
 The app should surface light in-flow reading coaching prompts and a short session-end coach summary so each session closes with celebration, reflection, and a next step
 
 ## Non-functional Requirements
@@ -98,7 +98,7 @@ The system should be stable for daily usage without crashes or data loss
 
 ## User Flows
 Primary flow:
-Adi logs in → lands on modern dashboard (sees stats, streak, heatmap, daily 60-minute practice bars, weekly mission, mastery, parent review) → chooses Guided or Quiz under a subject → starts the session → sees first question → enters answer → receives the right style of feedback for the selected mode → proceeds through the session
+Adi logs in → lands on modern dashboard (sees stats, streak, heatmap, daily practice bars, best next step, mastery, detailed insights, and parent review) → chooses Guided or Quiz under a subject → starts the session → sees first question → enters answer → receives the right style of feedback for the selected mode → proceeds through the session
 
 Help flow:
 Adi is stuck → clicks “Need help” → receives step-by-step guidance → attempts solution → submits answer
@@ -113,7 +113,7 @@ Quiz flow:
 Adi wants a more assessment-like run → picks Quiz mode on the subject card → answers each question without instant correctness confirmation → optionally uses hints or shows the answer when stuck → sees a clean question-by-question review at the end
 
 Learning coach flow:
-Adi lands on the dashboard → sees this week's learning path, current habit signals, mastery by subject, and a revisit queue → starts the most helpful next session with clear purpose
+Adi lands on the dashboard → sees a clear best next step, mastery by subject, and compact detailed insight guidance → starts the most helpful next session with clear purpose
 
 Adaptive math flow:
 Adi answers quickly, correctly, and independently across multiple questions → the next questions become a little harder and the UI explains why
@@ -134,8 +134,8 @@ Adi finishes a session → sees one celebration, one growth area, and one sugges
 - Timer runs live during each question, changes color when time is running out, and pauses with the session.
 - A progress bar and live score are always visible at the top of the session screen.
 - Difficulty changes are surfaced with animated, supportive popups so challenge adjustments never feel random or punitive.
-- The dashboard includes a calm coaching layer: weekly mission cards, mastery chips, revisit actions, and a parent review panel designed to be readable by both Adi and a parent.
-- The dashboard also includes a simple daily-practice habit tracker for today and yesterday against a visible 60-minute goal.
+- The dashboard includes a calm coaching layer: best-next-step guidance, mastery chips, compact detailed insights, and a parent review panel designed to be readable by both Adi and a parent.
+- The dashboard also includes a simple daily-practice habit tracker for today and yesterday against a visible profile-driven goal.
 - Subject cards include a lightweight Guided vs Quiz mode picker with clear explanatory copy so Adi understands what kind of session he is starting.
 - Reading pages can include light checkpoint prompts that steer attention toward meaning, inference, and page-level understanding without interrupting flow too heavily.
 

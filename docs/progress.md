@@ -94,10 +94,10 @@
   - Very fast reading can switch the final assessment from free-text summary to a multiple-choice comprehension quiz with a warning about skimming risk
   - Test coverage expanded across server integration, client helper tests, and Playwright reading-quiz E2E flow
 - Learning coach layer added to the landing page:
-  - Weekly mission cards give Adi a small, visible learning path for the current week
+  - Best-next-step guidance gives Adi one clear recommended starting point
   - Habit signals summarize first-try success, independence, and working pace
   - Subject mastery cards classify each area as mastered, developing, or fragile
-  - Revisit queue highlights the next weak spots worth practicing again
+  - Detailed insights now carry the compact next-focus guidance instead of a separate revisit panel
   - Parent review panel surfaces celebration points, watchlist items, and suggested support moves on the same dashboard
 - Session reflection UX expanded:
   - Reading pages can show light comprehension checkpoint prompts during the session
@@ -109,7 +109,7 @@
   - Clicking the badge reveals a compact summary of the most recent shipped changes
   - Build/dev/test flows now sync `client/src/generated/releaseInfo.ts` automatically via `scripts/generate-release-info.mjs`
 - Daily habit and session-mode update completed:
-  - `GET /dashboard/:userId` now returns `dailyPractice` with today and yesterday time totals against a 60-minute target
+  - `GET /dashboard/:userId` now returns `dailyPractice` with today and yesterday time totals against a profile-driven target
   - The dashboard now visualizes those totals as simple progress bars to reinforce daily habit-building
   - Each subject card now offers `Guided` and `Quiz` start modes before launching a fresh session
   - Session records persist `sessionMode`, and resume flows now restore the correct mode label and behavior

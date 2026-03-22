@@ -700,8 +700,6 @@
   color: var(--color-text-secondary);
 }
 
-.mission-list,
-.revisit-list,
 .habit-signal-list,
 .mastery-grid,
 .parent-review-grid {
@@ -709,24 +707,6 @@
   gap: 14px;
 }
 
-.mission-item {
-  border-radius: 16px;
-  padding: 16px 18px;
-  border: 1px solid rgba(31, 36, 55, 0.08);
-  background: #fcfdff;
-}
-
-.mission-item.status-done {
-  background: #f7fff3;
-  border-color: rgba(88, 204, 2, 0.22);
-}
-
-.mission-item.status-in-progress {
-  background: #f7fbff;
-  border-color: rgba(28, 176, 246, 0.18);
-}
-
-.mission-badge,
 .mastery-stage-pill,
 .mastery-stage-chip {
   display: inline-flex;
@@ -740,40 +720,14 @@
   letter-spacing: 0.05em;
 }
 
-.mission-badge {
-  margin-bottom: 10px;
-  background: rgba(31, 36, 55, 0.06);
-  color: var(--color-text-primary);
-}
-
-.mission-badge.status-done {
-  background: rgba(88, 204, 2, 0.16);
-  color: #2f7d18;
-}
-
-.mission-badge.status-in-progress {
-  background: rgba(28, 176, 246, 0.12);
-  color: #0a6fa0;
-}
-
-.mission-badge.status-up-next {
-  background: rgba(245, 158, 11, 0.12);
-  color: #9a3412;
-}
-
-.mission-label,
-.mastery-card-title,
-.revisit-subject {
+.mastery-card-title {
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 800;
   color: var(--color-text-primary);
 }
 
-.mission-detail,
-.mastery-card-summary,
-.revisit-reason,
-.revisit-action {
+.mastery-card-summary {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
@@ -907,30 +861,6 @@
 .mastery-stage-pill,
 .mastery-stage-chip {
   flex-shrink: 0;
-}
-
-.revisit-item {
-  border-radius: 16px;
-  padding: 16px 18px;
-  background: #fffdf8;
-  border: 1px solid rgba(245, 158, 11, 0.18);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.revisit-action {
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.revisit-due {
-  margin: 4px 0 0;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #9a3412;
 }
 
 .parent-review-panel {
@@ -1075,6 +1005,14 @@
   text-transform: uppercase;
   letter-spacing: 0.6px;
   margin: 0;
+}
+
+.insight-box-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  font-weight: 600;
 }
 
 .insight-box.strengths .insight-box-title { color: var(--color-green-dark); }
@@ -1659,6 +1597,13 @@
   box-shadow: 0 4px 0 #9ca3af;
   cursor: not-allowed;
   transform: none;
+}
+
+.btn-start-subject.quiet-disabled:disabled {
+  background: linear-gradient(135deg, #58cc02, #46a302);
+  box-shadow: 0 4px 0 #3a8a00;
+  color: rgba(255, 255, 255, 0.82);
+  opacity: 0.72;
 }
 
 .reading-launch-banner {
@@ -3297,39 +3242,71 @@
 
 .meta-card-home {
   padding: 0;
+  background: linear-gradient(145deg, #f4fbff 0%, #eef8ff 52%, #fff8e7 100%);
+  border-color: rgba(28, 176, 246, 0.2);
 }
 
 .btn-home-card {
-  background: transparent;
-  border: none;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(28, 176, 246, 0.14);
   border-radius: 14px;
   cursor: pointer;
   text-align: center;
   color: var(--color-text-primary);
-  transition: background 0.15s, transform 0.15s;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
   padding: 12px 16px;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .btn-home-card:hover:not(:disabled) {
-  background: rgba(248, 250, 252, 0.7);
-  transform: translateY(-1px);
+  background: linear-gradient(145deg, #ffffff, #f3fbff 72%, #fff4d4 100%);
+  border-color: rgba(28, 176, 246, 0.28);
+  box-shadow: 0 12px 22px rgba(28, 176, 246, 0.12), 0 6px 0 rgba(186, 230, 253, 0.6);
+  transform: translateY(-5px);
+}
+
+.btn-home-card-icon {
+  font-size: 28px;
+  line-height: 1;
+  filter: drop-shadow(0 3px 8px rgba(14, 116, 144, 0.14));
+}
+
+.btn-home-card-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .btn-home-card-label {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 800;
   color: #0a6fa0;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
   line-height: 1.2;
 }
 
-.btn-home-card:hover {
-  transform: scale(1.1);
+.btn-home-card-hint {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #28789d;
+}
+
+.btn-home-card:hover .btn-home-card-label {
+  color: #075985;
+}
+
+.btn-home-card:focus-visible {
+  outline: 3px solid rgba(14, 165, 233, 0.3);
+  outline-offset: 3px;
 }
 
 /* Keep score-vs-target class for the inner gauge container */
@@ -3657,10 +3634,6 @@
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.practice-again-panel {
-  margin-top: 16px;
 }
 
 @media (max-width: 768px) {

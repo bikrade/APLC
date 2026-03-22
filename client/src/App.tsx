@@ -356,12 +356,6 @@ function getSubjectTrendMeta(trend: SubjectInsight['trend']): { label: string; i
   return { label: 'Steady', icon: '•' }
 }
 
-function getMissionStatusMeta(status: MissionStatus): { label: string; icon: string } {
-  if (status === 'done') return { label: 'Done', icon: '✓' }
-  if (status === 'in-progress') return { label: 'In Progress', icon: '↗' }
-  return { label: 'Up Next', icon: '•' }
-}
-
 function getMasteryStageMeta(stage: MasteryStage): { label: string; className: string } {
   if (stage === 'mastered') return { label: 'Mastered', className: 'mastered' }
   if (stage === 'fragile') return { label: 'Fragile', className: 'fragile' }
@@ -1735,27 +1729,6 @@ function App() {
             </div>
           )}
 
-          {learningCoach && (
-            <div className="coach-panel coach-mission-panel">
-              <h3 className="panel-title">🗺️ {learningCoach.weeklyMission.title}</h3>
-              <p className="coach-panel-subtitle">{learningCoach.weeklyMission.subtitle}</p>
-              <div className="mission-list">
-                {learningCoach.weeklyMission.items.map((item) => {
-                  const meta = getMissionStatusMeta(item.status)
-                  return (
-                    <div key={item.id} className={`mission-item status-${item.status}`}>
-                      <div className={`mission-badge status-${item.status}`}>{meta.icon} {meta.label}</div>
-                      <div>
-                        <p className="mission-label">{item.label}</p>
-                        <p className="mission-detail">{item.detail}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Subject Selection — primary action, shown near top */}
           <div className="subjects-section">
             <h3 className="panel-title">📚 Choose a Subject</h3>
@@ -1775,6 +1748,7 @@ function App() {
                 const latestInProgressSession = latestInProgressBySubject[subject.id]
                 const unfinishedForSubject = inProgressSessions.filter((session) => session.subject === subject.id)
                 const isLaunchingThisSubject = launchState?.subject === subject.id
+                const isBlockingHomeLaunch = isBusy && launchState !== null
                 const lockedSessionMode = latestInProgressSession?.sessionMode
                 const displayedSessionMode = lockedSessionMode ?? sessionModePreferences[subject.id]
                 return (
@@ -1823,7 +1797,7 @@ function App() {
                       </div>
                     )}
                     <button
-                      className="btn-start-subject"
+                      className={`btn-start-subject ${isBlockingHomeLaunch && !isLaunchingThisSubject ? 'quiet-disabled' : ''}`}
                       onClick={() => requestStartSession(subject.id)}
                       disabled={isBusy}
                     >
@@ -1838,8 +1812,6 @@ function App() {
                                 : 'Starting Session...'}
                           </span>
                         </>
-                      ) : isBusy ? (
-                        <span className="loading-dots"><span /><span /><span /></span>
                       ) : latestInProgressSession
                         ? `Continue ${getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} →`
                         : `Start ${getSessionModeMeta(displayedSessionMode).shortLabel} →`}
@@ -1882,24 +1854,6 @@ function App() {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div className="coach-panel practice-again-panel">
-                <h3 className="panel-title">🔁 Practice Again Soon</h3>
-                {learningCoach.revisitQueue.length > 0 ? (
-                  <div className="revisit-list">
-                    {learningCoach.revisitQueue.map((item) => (
-                      <div key={`${item.subject}-${item.skill}`} className="revisit-item">
-                        <p className="revisit-subject">{item.subject} · {item.skill}</p>
-                        <p className="revisit-reason">{item.reason}</p>
-                        <p className="revisit-action">{item.action}</p>
-                        {item.dueLabel && <p className="revisit-due">{item.dueLabel}</p>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-data-msg">No urgent revisit queue yet. Keep practicing to sharpen the next focus area.</p>
-                )}
               </div>
             </div>
           )}
@@ -1948,12 +1902,19 @@ function App() {
                   )}
                 </div>
               </div>
-              {insights.recommendedFocus.length > 0 && (
+              {(insights.recommendedFocus.length > 0 || learningCoach?.bestNextStep) && (
                 <div className="insight-box recommendations">
                   <p className="insight-box-title">🎯 Next Best Focus</p>
-                  <ul className="insight-list">
-                    {insights.recommendedFocus.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
+                  {learningCoach?.bestNextStep && (
+                    <p className="insight-box-copy">
+                      Start with {learningCoach.bestNextStep.subject}: {learningCoach.bestNextStep.title}. {learningCoach.bestNextStep.cta}
+                    </p>
+                  )}
+                  {insights.recommendedFocus.length > 0 && (
+                    <ul className="insight-list">
+                      {insights.recommendedFocus.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  )}
                 </div>
               )}
               {insights.bySubject.length > 0 && (
@@ -2205,8 +2166,13 @@ function App() {
                 className="btn-home-card"
                 onClick={() => setShowExitConfirm(true)}
                 title="Save & go to Home"
+                aria-label="Save progress and go to Home"
               >
-                <span className="btn-home-card-label">Home</span>
+                <span className="btn-home-card-icon" aria-hidden="true">🏠</span>
+                <span className="btn-home-card-copy">
+                  <span className="btn-home-card-label">Home</span>
+                  <span className="btn-home-card-hint">Tap here to save and go back</span>
+                </span>
               </button>
             </div>
 

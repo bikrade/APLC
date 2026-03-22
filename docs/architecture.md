@@ -6,8 +6,8 @@
 - Core views: Login, Home (dashboard & insights), Session, Summary.
 - One-question-at-a-time interaction model with back navigation only.
 - Primary UX goal: engaging, Duolingo-style learning flow with immediate animated feedback.
-- Home view now includes a learning-coach layer: weekly mission, habit signals, mastery cards, revisit queue, and parent review notes.
-- Home view also includes daily-practice progress bars that compare today and yesterday against a 60-minute target.
+- Home view now includes a learning-coach layer centered on a best-next-step card, subject mastery cards, detailed insights, and parent review notes.
+- Home view also includes daily-practice progress bars that compare today and yesterday against a profile-driven target from the learner profile.
 - Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
 - Each subject card exposes two launch modes: `Guided` for live correctness feedback and `Quiz` for quieter, end-of-session review.
 - Reading sessions can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
@@ -95,7 +95,7 @@
 - **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-5.
 - **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps and the same adaptive numeric complexity levels.
 - **Reading**: Story-based reading comprehension with fresh session stories, corrected pace scoring, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Overall score ≥ 7 to pass.
-- `buildLearningCoach()` in `server/src/index.ts` derives lightweight coaching structures from completed sessions only: weekly mission items, habit signals, subject mastery stages, revisit queue, and parent review notes.
+- `buildLearningCoach()` in `server/src/index.ts` derives lightweight coaching structures from completed sessions only: best-next-step guidance, habit signals, subject mastery stages, parent review notes, and supporting revisit metadata.
 
 ## Security
 
