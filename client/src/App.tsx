@@ -386,6 +386,7 @@ function getSessionCoachSummary(
     averageWpm: number
     overallScore: number
     comprehensionScore: number
+    speedScore: number
     assessmentMode: 'summary' | 'quiz'
   },
 ): { celebration: string; growthNote: string; nextStep: string } {
