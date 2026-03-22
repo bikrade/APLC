@@ -1,6 +1,8 @@
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionRecord } from '../src/types'
+import { generateQuestionByType } from '../src/utils'
+import { buildReadingGenerationProfile, createReadingQuestionSet } from '../src/reading'
 import { readSavedSession, setupTestApp, writeSession } from './helpers'
 
 let cleanupCurrent: (() => Promise<void>) | null = null
@@ -109,7 +111,7 @@ describe('APLC backend', () => {
 
     const wrong = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)
-      .send({ questionIndex: 0, answer: '9999', elapsedMs: 5000, selfRating: 3 })
+      .send({ questionIndex: 0, answer: '9999', elapsedMs: 5000 })
 
     expect(wrong.status).toBe(200)
     expect(wrong.body.isCorrect).toBe(false)
@@ -118,7 +120,7 @@ describe('APLC backend', () => {
 
     const correct = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)
-      .send({ questionIndex: 0, answer: String(correctAnswer), elapsedMs: 7000, selfRating: 4 })
+      .send({ questionIndex: 0, answer: String(correctAnswer), elapsedMs: 7000 })
 
     expect(correct.status).toBe(200)
     expect(correct.body.isCorrect).toBe(true)
@@ -138,7 +140,7 @@ describe('APLC backend', () => {
     expect(response.body.error).toMatch(/Invalid sessionId/i)
   })
 
-  test('handles the full reading flow and records reading speed metrics', async () => {
+  test('handles the full reading summary flow and records reading speed metrics', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
 
@@ -151,12 +153,13 @@ describe('APLC backend', () => {
     expect(start.status).toBe(200)
     expect(start.body.questionCount).toBe(6)
     expect(start.body.questions[0].kind).toBe('reading-page')
-    expect(start.body.questions[1].prompt).toBe('')
+    expect(start.body.questions[1].kind).toBe('reading-page')
+    expect(start.body.questions[5].kind).toBe('reading-summary')
 
     for (let index = 0; index < 5; index += 1) {
       const pageResponse = await request(ctx.app)
         .post(`/session/adi/${sessionId}/answer`)
-        .send({ questionIndex: index, elapsedMs: 60000, answer: '' })
+        .send({ questionIndex: index, elapsedMs: 180000, answer: '' })
 
       expect(pageResponse.status).toBe(200)
       expect(pageResponse.body.isCorrect).toBe(true)
@@ -179,6 +182,228 @@ describe('APLC backend', () => {
     const inProgress = await request(ctx.app).get('/sessions/in-progress/adi')
     expect(inProgress.status).toBe(200)
     expect(inProgress.body.sessions).toHaveLength(0)
+  })
+
+  test('switches fast reading into a comprehension quiz and warns about high speed', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const start = await request(ctx.app).post('/session/start').send({
+      userId: 'adi',
+      subject: 'Reading',
+    })
+    const sessionId = start.body.sessionId as string
+    const savedSession = await readSavedSession(ctx.dataRoot, sessionId)
+    const quizAnswers = savedSession.questions[5]?.quizItems?.map((item) => item.correctOption) ?? []
+
+    for (let index = 0; index < 5; index += 1) {
+      const pageResponse = await request(ctx.app)
+        .post(`/session/adi/${sessionId}/answer`)
+        .send({ questionIndex: index, elapsedMs: 20000, answer: '' })
+
+      expect(pageResponse.status).toBe(200)
+      if (index === 4) {
+        expect(pageResponse.body.questions[5].kind).toBe('reading-quiz')
+        expect(pageResponse.body.adaptiveNotification?.kind).toBe('reading-warning')
+      }
+    }
+
+    const quiz = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({
+        questionIndex: 5,
+        elapsedMs: 25000,
+        readingQuizAnswers: quizAnswers,
+      })
+
+    expect(quiz.status).toBe(200)
+    expect(quiz.body.status).toBe('completed')
+    expect(quiz.body.answers[5].readingWpm).toBeGreaterThanOrEqual(190)
+    expect(quiz.body.answers[5].comprehensionScore).toBe(10)
+    expect(quiz.body.explanation).toContain('quiz questions correct')
+  })
+
+  test('raises difficulty after a steady run of fast success and lowers it gradually after sustained struggle', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const start = await request(ctx.app).post('/session/start').send({
+      userId: 'adi',
+      subject: 'Multiplication',
+    })
+    const sessionId = start.body.sessionId as string
+    expect(start.body.difficultyLevel).toBe(3)
+
+    let savedSession = await readSavedSession(ctx.dataRoot, sessionId)
+    const answerOne = savedSession.questions[0]?.answer
+    const first = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 0, answer: String(answerOne), elapsedMs: 25000 })
+
+    expect(first.status).toBe(200)
+    expect(first.body.adaptiveNotification).toBeFalsy()
+
+    savedSession = await readSavedSession(ctx.dataRoot, sessionId)
+    const answerTwo = savedSession.questions[1]?.answer
+    const second = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 1, answer: String(answerTwo), elapsedMs: 22000 })
+
+    expect(second.status).toBe(200)
+    expect(second.body.difficultyLevel).toBe(3)
+    expect(second.body.adaptiveNotification).toBeFalsy()
+
+    savedSession = await readSavedSession(ctx.dataRoot, sessionId)
+    const answerThree = savedSession.questions[2]?.answer
+    const third = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 2, answer: String(answerThree), elapsedMs: 24000 })
+
+    expect(third.status).toBe(200)
+    expect(third.body.difficultyLevel).toBe(4)
+    expect(third.body.adaptiveNotification?.kind).toBe('difficulty-up')
+
+    const wrongOne = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 3, answer: '9999', elapsedMs: 170000 })
+    expect(wrongOne.status).toBe(200)
+    expect(wrongOne.body.difficultyLevel).toBe(4)
+    expect(wrongOne.body.adaptiveNotification).toBeFalsy()
+
+    const reveal = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/reveal`)
+      .send({ questionIndex: 3, elapsedMs: 175000 })
+    expect(reveal.status).toBe(200)
+    expect(reveal.body.difficultyLevel).toBe(4)
+    expect(reveal.body.adaptiveNotification).toBeFalsy()
+
+    const wrongTwo = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 4, answer: '9998', elapsedMs: 190000 })
+
+    expect(wrongTwo.status).toBe(200)
+    expect(wrongTwo.body.difficultyLevel).toBe(3)
+    expect(wrongTwo.body.adaptiveNotification?.kind).toBe('difficulty-down')
+  })
+
+  test('persists elapsed struggle time across wrong answers and reveal usage', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const start = await request(ctx.app).post('/session/start').send({
+      userId: 'adi',
+      subject: 'Division',
+    })
+    const sessionId = start.body.sessionId as string
+
+    const wrong = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 0, answer: '9999', elapsedMs: 91000 })
+
+    expect(wrong.status).toBe(200)
+    expect(wrong.body.answers[0].elapsedMs).toBe(91000)
+    expect(wrong.body.answers[0].completed).toBe(false)
+
+    const reveal = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/reveal`)
+      .send({ questionIndex: 0, elapsedMs: 128000 })
+
+    expect(reveal.status).toBe(200)
+    expect(reveal.body.answers[0].elapsedMs).toBe(128000)
+    expect(reveal.body.answers[0].usedReveal).toBe(true)
+    expect(reveal.body.answers[0].completed).toBe(true)
+  })
+
+  test('creates a different reading story for a different session id', () => {
+    const firstStory = createReadingQuestionSet('20260322-120000-Reading')
+    const secondStory = createReadingQuestionSet('20260322-120001-Reading')
+
+    expect(firstStory[0]?.content).not.toBe(secondStory[0]?.content)
+    expect(firstStory[5]?.title).not.toBe(secondStory[5]?.title)
+    expect(firstStory[5]?.quizItems?.[0]?.prompt).not.toBe(secondStory[5]?.quizItems?.[0]?.prompt)
+  })
+
+  test('raises reading generation challenge when recent reading is both fast and accurate', () => {
+    const makeReadingSession = (id: string, startedAt: string, readingScore: number, comprehensionScore: number, readingWpm: number): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Reading',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 2,
+      questions: [
+        {
+          id: `${id}-page`,
+          prompt: 'Read the passage.',
+          type: 'reading_page',
+          kind: 'reading-page',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+        {
+          id: `${id}-summary`,
+          prompt: 'Summarize the passage.',
+          type: 'reading_summary',
+          kind: 'reading-summary',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+      ],
+      answers: [
+        {
+          questionId: `${id}-page`,
+          questionIndex: 0,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 60000,
+          isCorrect: true,
+        },
+        {
+          questionId: `${id}-summary`,
+          questionIndex: 1,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 45000,
+          isCorrect: true,
+          readingScore,
+          comprehensionScore,
+          speedScore: 10,
+          readingWpm,
+        },
+      ],
+      totalTokensUsed: 0,
+    })
+
+    const profile = buildReadingGenerationProfile([
+      makeReadingSession('20260318-090000-Reading', '2026-03-18T09:00:00.000Z', 9.2, 9, 191),
+      makeReadingSession('20260320-090000-Reading', '2026-03-20T09:00:00.000Z', 8.9, 8.7, 188),
+      makeReadingSession('20260322-090000-Reading', '2026-03-22T09:00:00.000Z', 9.1, 9.3, 194),
+    ])
+
+    expect(profile.challengeTier).toBe('advanced')
+    expect(profile.performanceSummary).toContain('Increase the depth')
+  })
+
+  test('uses a mix of plain numeric and short descriptive math prompts at higher difficulty', () => {
+    const plain = generateQuestionByType('q-4', 'decimal', 'Multiplication', 4)
+    const descriptive = generateQuestionByType('q-6', 'decimal', 'Multiplication', 4)
+    const divisionStory = generateQuestionByType('q-8', 'mixed', 'Division', 5)
+
+    expect(plain.prompt).toContain('×')
+    expect(descriptive.prompt).not.toContain('×')
+    expect(descriptive.prompt).toMatch(/Adi|craft kit|reading challenge|snack/i)
+    expect(descriptive.helpSteps[0]).toMatch(/Equation to solve:/i)
+    expect(divisionStory.prompt).not.toContain('÷')
+    expect(divisionStory.helpSteps[0]).toMatch(/Equation to solve:/i)
   })
 
   test('keeps only the latest active session per subject', async () => {
@@ -429,13 +654,18 @@ describe('APLC backend', () => {
     expect(res.body.overall.totalQuestionsAnswered).toBe(8)
     expect(res.body.overall.strongestSubject).toBe('Division')
     expect(res.body.overall.needsAttentionSubject).toBe('Multiplication')
+    expect(res.body.overall.subjectSessionBreakdown).toEqual({
+      Multiplication: 1,
+      Division: 1,
+      Reading: 1,
+    })
     expect(res.body.recommendedFocus).toHaveLength(3)
     expect(res.body.recommendedFocus).toContainEqual(expect.stringContaining('Multiplication:'))
     expect(res.body.bySubject).toHaveLength(3)
 
     const multiplication = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Multiplication')
     expect(multiplication).toBeTruthy()
-    expect(multiplication.trend).toBe('needs-attention')
+    expect(multiplication.trend).toBe('steady')
     expect(multiplication.metrics.accuracy).toBe(67)
     expect(multiplication.metrics.revealRate).toBe(33)
     expect(multiplication.focusAreas).toContainEqual(expect.stringContaining('accuracy is 67%'))
@@ -450,5 +680,141 @@ describe('APLC backend', () => {
     expect(reading.metrics.averageWpm).toBe(128)
     expect(reading.metrics.comprehensionScore).toBe(8)
     expect(reading.metrics.readingScore).toBe(8.5)
+  })
+
+  test('insights marks subject cards as improving or declining from recent session trends', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const makeMathSession = (
+      id: string,
+      startedAt: string,
+      subject: 'Multiplication' | 'Division',
+      answerSet: Array<{ correct: boolean; elapsedMs: number; usedReveal?: boolean }>,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject,
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: answerSet.length,
+      questions: answerSet.map((_, index) => ({
+        id: `${id}-q-${index}`,
+        prompt: `Question ${index + 1}`,
+        type: 'decimal',
+        kind: 'math',
+        answer: 1,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      })),
+      answers: answerSet.map((answer, index) => ({
+        questionId: `${id}-q-${index}`,
+        questionIndex: index,
+        completed: true,
+        usedHelp: false,
+        usedReveal: answer.usedReveal ?? false,
+        elapsedMs: answer.elapsedMs,
+        isCorrect: answer.correct,
+        attemptCount: answer.correct ? 1 : 2,
+        firstAttemptCorrect: answer.correct,
+      })),
+      totalTokensUsed: 0,
+    })
+
+    const makeReadingSession = (id: string, startedAt: string, readingScore: number, comprehensionScore: number): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Reading',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 2,
+      questions: [
+        {
+          id: `${id}-page`,
+          prompt: 'Read the passage.',
+          type: 'reading_page',
+          kind: 'reading-page',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+        {
+          id: `${id}-summary`,
+          prompt: 'Summarize the passage.',
+          type: 'reading_summary',
+          kind: 'reading-summary',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+      ],
+      answers: [
+        {
+          questionId: `${id}-page`,
+          questionIndex: 0,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 60000,
+          isCorrect: true,
+        },
+        {
+          questionId: `${id}-summary`,
+          questionIndex: 1,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 45000,
+          isCorrect: true,
+          readingScore,
+          comprehensionScore,
+          speedScore: 8,
+          readingWpm: 132,
+        },
+      ],
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeMathSession('20260315-090000-Multiplication', '2026-03-15T09:00:00.000Z', 'Multiplication', [
+      { correct: false, elapsedMs: 155000, usedReveal: true },
+      { correct: true, elapsedMs: 120000, usedReveal: true },
+      { correct: false, elapsedMs: 145000, usedReveal: true },
+    ]))
+    await writeSession(ctx.dataRoot, makeMathSession('20260320-090000-Multiplication', '2026-03-20T09:00:00.000Z', 'Multiplication', [
+      { correct: true, elapsedMs: 42000 },
+      { correct: true, elapsedMs: 38000 },
+      { correct: true, elapsedMs: 45000 },
+    ]))
+    await writeSession(ctx.dataRoot, makeMathSession('20260316-090000-Division', '2026-03-16T09:00:00.000Z', 'Division', [
+      { correct: true, elapsedMs: 52000 },
+      { correct: true, elapsedMs: 56000 },
+      { correct: true, elapsedMs: 50000 },
+    ]))
+    await writeSession(ctx.dataRoot, makeMathSession('20260321-090000-Division', '2026-03-21T09:00:00.000Z', 'Division', [
+      { correct: false, elapsedMs: 180000, usedReveal: true },
+      { correct: true, elapsedMs: 160000, usedReveal: true },
+      { correct: false, elapsedMs: 190000, usedReveal: true },
+    ]))
+    await writeSession(ctx.dataRoot, makeReadingSession('20260318-090000-Reading', '2026-03-18T09:00:00.000Z', 8.8, 9))
+    await writeSession(ctx.dataRoot, makeReadingSession('20260322-090000-Reading', '2026-03-22T09:00:00.000Z', 8.7, 8.5))
+
+    const res = await request(ctx.app).get('/insights/adi')
+
+    expect(res.status).toBe(200)
+    const multiplication = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Multiplication')
+    const division = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Division')
+    const reading = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Reading')
+
+    expect(multiplication.trend).toBe('improving')
+    expect(division.trend).toBe('declining')
+    expect(reading.trend).toBe('steady')
   })
 })

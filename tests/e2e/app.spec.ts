@@ -9,7 +9,7 @@ async function enterLocalApp(page: import('@playwright/test').Page): Promise<voi
 
 test.describe.configure({ mode: 'serial' })
 
-test('multiplication wrong-answer flow shows retry', async ({ page }) => {
+test('multiplication wrong-answer flow requires retry or reveal before continuing', async ({ page }) => {
   await enterLocalApp(page)
 
   const multiplicationCard = page.locator('.subject-card').filter({ hasText: 'Multiplication' })
@@ -21,10 +21,13 @@ test('multiplication wrong-answer flow shows retry', async ({ page }) => {
 
   await expect(page.getByText(/Not quite right/i)).toBeVisible()
   await expect(page.getByRole('button', { name: /retry/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /move on/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /see next question/i })).toBeHidden()
 
   await page.getByRole('button', { name: /retry/i }).click()
   await expect(page.getByRole('button', { name: /retry/i })).toBeHidden()
+
+  await page.getByRole('button', { name: /^show$/i }).click()
+  await expect(page.getByRole('button', { name: /see next question/i })).toBeVisible()
 })
 
 test('division session launches in the same shared wizard shell', async ({ page }) => {
@@ -38,7 +41,7 @@ test('division session launches in the same shared wizard shell', async ({ page 
   await expect(page.getByText(/Time/i)).toBeVisible()
 })
 
-test('reading flow advances pages and ends on the reading summary report', async ({ page }) => {
+test('reading flow can switch fast readers into the quiz-based comprehension check', async ({ page }) => {
   await enterLocalApp(page)
 
   const readingCard = page.locator('.subject-card').filter({ hasText: 'Reading' })
@@ -48,20 +51,23 @@ test('reading flow advances pages and ends on the reading summary report', async
 
   for (let pageIndex = 1; pageIndex <= 5; pageIndex += 1) {
     await page.getByRole('button', { name: /next page/i }).click()
-    await expect(page.getByText(/Awesome, keep reading\./i)).toBeVisible()
     if (pageIndex < 5) {
+      await expect(page.getByText(/Awesome, keep reading\./i)).toBeVisible()
       await expect(page.getByText(new RegExp(`Question ${pageIndex + 1} of 6`, 'i'))).toBeVisible()
     }
   }
 
   await expect(page.getByText(/Question 6 of 6/i)).toBeVisible()
-  await page.getByRole('textbox').fill(
-    'Mira and Dev restored the Monsoon Clock, studied the notebooks and patterns, and helped the town act early before the storm flooded the market. The story shows that reading carefully, noticing patterns, and working together can protect the whole community.',
-  )
-  await page.getByRole('button', { name: /submit summary/i }).click()
+  await expect(page.locator('.reading-page-title')).toContainText(/Comprehension Check/i)
+  const quizItems = page.locator('.reading-quiz-item')
+  const quizCount = await quizItems.count()
+  for (let index = 0; index < quizCount; index += 1) {
+    await quizItems.nth(index).locator('.reading-quiz-option').first().click()
+  }
+  await page.getByRole('button', { name: /submit quiz/i }).click()
 
   await expect(page.getByText(/Reading Session Complete!/i)).toBeVisible()
   await expect(page.getByText(/Average WPM/i)).toBeVisible()
-  await expect(page.getByText(/Target reading pace is 120-140 WPM\./i)).toBeVisible()
+  await expect(page.getByText(/Target reading pace is 170 WPM\./i)).toBeVisible()
   await expect(page.getByText(/Overall Reading/i)).toBeVisible()
 })

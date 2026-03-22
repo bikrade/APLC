@@ -30,6 +30,7 @@ type User = { id: string; name: string }
 type AuthUser = { email: string; name: string; picture?: string; userId: string }
 type Subject = 'Multiplication' | 'Division' | 'Reading'
 type AuthConfig = { googleConfigured: boolean; googleClientId?: string | null }
+type LaunchState = { subject: Subject; mode: 'start' | 'resume' } | null
 
 type InsightResponse = {
   hasEnoughData: boolean
@@ -43,12 +44,13 @@ type InsightResponse = {
     totalQuestionsAnswered: number
     strongestSubject: Subject | null
     needsAttentionSubject: Subject | null
+    subjectSessionBreakdown: Record<Subject, number>
   }
 }
 
 type SubjectInsight = {
   subject: Subject
-  trend: 'improving' | 'steady' | 'building' | 'needs-attention'
+  trend: 'improving' | 'steady' | 'declining'
   sessionsCompleted: number
   headline: string
   strengths: string[]
@@ -91,14 +93,27 @@ type InProgressSession = {
   subject: Subject
 }
 
+type AdaptiveNotification = {
+  kind: 'difficulty-up' | 'difficulty-down' | 'reading-warning'
+  title: string
+  message: string
+}
+
+type ReadingQuizItem = {
+  id: string
+  prompt: string
+  options: string[]
+}
+
 type Question = {
   id: string
   prompt: string
   type: string
-  kind?: 'math' | 'reading-page' | 'reading-summary'
+  kind?: 'math' | 'reading-page' | 'reading-summary' | 'reading-quiz'
   title?: string
   content?: string
   wordCount?: number
+  quizItems?: ReadingQuizItem[]
   index: number
 }
 
@@ -109,10 +124,12 @@ type AnswerState = {
   userTextAnswer?: string
   isCorrect?: boolean
   completed: boolean
-  selfRating?: number
   usedHelp: boolean
   usedReveal: boolean
   elapsedMs: number
+  attemptCount?: number
+  firstAttemptCorrect?: boolean
+  selectedOptions?: number[]
   readingScore?: number
   comprehensionScore?: number
   speedScore?: number
@@ -127,6 +144,7 @@ type StartSessionResponse = {
   answers: AnswerState[]
   currentIndex: number
   totalTokensUsed?: number
+  difficultyLevel?: number
 }
 
 type SubmitAnswerResponse = {
@@ -137,12 +155,15 @@ type SubmitAnswerResponse = {
   answers: AnswerState[]
   questions: Question[]
   totalTokensUsed?: number
+  difficultyLevel?: number
+  adaptiveNotification?: AdaptiveNotification | null
 }
 
 type HelpResponse = {
   helpSteps: string[]
   helpSource?: 'openai' | 'rule-based'
   totalTokensUsed?: number
+  difficultyLevel?: number
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
@@ -238,17 +259,14 @@ function formatRelativeTime(isoDate: string): string {
   return `${diffDays}d ago`
 }
 
-function getSubjectTrendLabel(trend: SubjectInsight['trend']): string {
-  switch (trend) {
-    case 'improving':
-      return 'Improving'
-    case 'needs-attention':
-      return 'Needs Focus'
-    case 'steady':
-      return 'Steady'
-    default:
-      return 'Building'
+function getSubjectTrendMeta(trend: SubjectInsight['trend']): { label: string; icon: string } {
+  if (trend === 'improving') {
+    return { label: 'Improving', icon: '↗' }
   }
+  if (trend === 'declining') {
+    return { label: 'Declining', icon: '↘' }
+  }
+  return { label: 'Steady', icon: '•' }
 }
 
 function defaultInsightsMessage(): InsightResponse {
@@ -264,6 +282,11 @@ function defaultInsightsMessage(): InsightResponse {
       totalQuestionsAnswered: 0,
       strongestSubject: null,
       needsAttentionSubject: null,
+      subjectSessionBreakdown: {
+        Multiplication: 0,
+        Division: 0,
+        Reading: 0,
+      },
     },
   }
 }
@@ -440,6 +463,7 @@ function App() {
   const [inProgressSessions, setInProgressSessions] = useState<InProgressSession[]>([])
   const [sessionId, setSessionId] = useState('')
   const [sessionSubject, setSessionSubject] = useState<Subject>('Multiplication')
+  const [difficultyLevel, setDifficultyLevel] = useState(3)
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<AnswerState[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -448,7 +472,7 @@ function App() {
   const [pausedElapsed, setPausedElapsed] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [answerInput, setAnswerInput] = useState('')
-  const [selfRating, setSelfRating] = useState(3)
+  const [readingQuizAnswers, setReadingQuizAnswers] = useState<number[]>([])
   const [hintSteps, setHintSteps] = useState<string[]>([])
   const [feedback, setFeedback] = useState('')
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
@@ -460,9 +484,12 @@ function App() {
   const [showCelebration, setShowCelebration] = useState(false)
   const [showWrongAnim, setShowWrongAnim] = useState(false)
   const [wrongMsg, setWrongMsg] = useState('')
+  const [adaptivePopup, setAdaptivePopup] = useState<AdaptiveNotification | null>(null)
   const [inputState, setInputState] = useState<'idle' | 'correct' | 'incorrect'>('idle')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
+  const [launchState, setLaunchState] = useState<LaunchState>(null)
+  const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
   const answerInputRef = useRef<HTMLInputElement>(null)
   const answerTextareaRef = useRef<HTMLTextAreaElement>(null)
   const isGoogleAuthEnabled = Boolean(googleClientId)
@@ -523,6 +550,7 @@ function App() {
   const isReadingSession = sessionSubject === 'Reading'
   const isReadingPage = currentQuestion?.kind === 'reading-page'
   const isReadingSummary = currentQuestion?.kind === 'reading-summary'
+  const isReadingQuiz = currentQuestion?.kind === 'reading-quiz'
 
   const elapsedMs = useMemo(() => {
     void tick
@@ -718,6 +746,26 @@ function App() {
     }
   }, [stage, viewIndex, isReadingSummary])
 
+  useEffect(() => {
+    if (isReadingSummary) {
+      setAnswerInput(currentAnswerState?.userTextAnswer ?? '')
+      return
+    }
+    if (isReadingQuiz) {
+      const expectedLength = currentQuestion?.quizItems?.length ?? 0
+      const existingAnswers = currentAnswerState?.selectedOptions ?? []
+      setReadingQuizAnswers(
+        expectedLength > 0
+          ? Array.from({ length: expectedLength }, (_, index) => existingAnswers[index] ?? -1)
+          : [],
+      )
+      return
+    }
+    if (!isReadingPage) {
+      setReadingQuizAnswers([])
+    }
+  }, [currentAnswerState?.selectedOptions, currentAnswerState?.userTextAnswer, currentQuestion?.quizItems, isReadingPage, isReadingQuiz, isReadingSummary])
+
   const handleGoogleCredential = useCallback(async (credential: string): Promise<void> => {
     setError('')
     setIsBusy(true)
@@ -809,11 +857,13 @@ function App() {
       const data = (await res.json()) as StartSessionResponse
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
+      setDifficultyLevel(data.difficultyLevel ?? 3)
       setQuestions(data.questions)
       setAnswers(data.answers)
       setCurrentIndex(data.currentIndex)
       setViewIndex(0)
       setAnswerInput('')
+      setReadingQuizAnswers([])
       setHintSteps([])
       setFeedback('')
       setIsCorrect(null)
@@ -821,10 +871,18 @@ function App() {
       setInputState('idle')
       setShowExitConfirm(false)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      if (subject === 'Reading') {
+        const introTitle = data.questions[0]?.title ?? ''
+        setReadingSessionIntroTitle(introTitle)
+        window.setTimeout(() => setReadingSessionIntroTitle(''), 2600)
+      } else {
+        setReadingSessionIntroTitle('')
+      }
       setStage('session')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Session start failed')
     } finally {
+      setLaunchState(null)
       setIsBusy(false)
     }
   }
@@ -844,14 +902,17 @@ function App() {
         questions: Question[]
         answers: AnswerState[]
         totalTokensUsed?: number
+        difficultyLevel?: number
       }
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
+      setDifficultyLevel(data.difficultyLevel ?? 3)
       setQuestions(data.questions)
       setAnswers(data.answers)
       setCurrentIndex(data.currentIndex)
       setViewIndex(data.currentIndex)
       setAnswerInput('')
+      setReadingQuizAnswers([])
       setHintSteps([])
       setFeedback('')
       setIsCorrect(null)
@@ -859,10 +920,12 @@ function App() {
       setInputState('idle')
       setShowExitConfirm(false)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setReadingSessionIntroTitle('')
       setStage('session')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Resume failed')
     } finally {
+      setLaunchState(null)
       setIsBusy(false)
     }
   }
@@ -893,9 +956,11 @@ function App() {
   const requestStartSession = (subject: Subject): void => {
     const latestInProgressSession = latestInProgressBySubject[subject]
     if (latestInProgressSession) {
+      setLaunchState({ subject, mode: 'resume' })
       void resumeSession(latestInProgressSession.sessionId)
       return
     }
+    setLaunchState({ subject, mode: 'start' })
     void startSession(subject)
   }
 
@@ -915,6 +980,7 @@ function App() {
       setHintSteps(data.helpSteps)
       setHelpSource(data.helpSource ?? null)
       if (data.totalTokensUsed !== undefined) setTotalTokensUsed(data.totalTokensUsed)
+      if (data.difficultyLevel !== undefined) setDifficultyLevel(data.difficultyLevel)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Help failed')
     } finally {
@@ -967,17 +1033,29 @@ function App() {
     setTimeout(() => setShowCelebration(false), 900)
   }, [])
 
+  const showAdaptivePopup = useCallback((notification?: AdaptiveNotification | null) => {
+    if (!notification) return
+    setAdaptivePopup(notification)
+    window.setTimeout(() => setAdaptivePopup(null), notification.kind === 'reading-warning' ? 3200 : 2800)
+  }, [])
+
   /* ── Submit Answer ──────────────────────────────────────────── */
   const submitAnswer = async (): Promise<void> => {
     if (!sessionId || viewIndex !== currentIndex) return
-    if (!isReadingPage && !answerInput.trim()) return
+    if (!isReadingPage && !isReadingQuiz && !answerInput.trim()) return
+    if (isReadingQuiz && readingQuizAnswers.some((value) => value < 0)) return
     setIsBusy(true)
     setError('')
     try {
       const res = await apiFetch(`/session/${selectedUserId}/${sessionId}/answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionIndex: viewIndex, answer: answerInput, elapsedMs, selfRating }),
+        body: JSON.stringify({
+          questionIndex: viewIndex,
+          answer: answerInput,
+          elapsedMs,
+          readingQuizAnswers: isReadingQuiz ? readingQuizAnswers : undefined,
+        }),
       })
       const data = (await res.json()) as SubmitAnswerResponse | { error: string }
       if (!res.ok) throw new Error('error' in data ? data.error : 'Failed to submit answer')
@@ -987,18 +1065,21 @@ function App() {
       setCurrentIndex(payload.currentIndex)
       setIsCorrect(payload.isCorrect)
       if (payload.totalTokensUsed !== undefined) setTotalTokensUsed(payload.totalTokensUsed)
+      if (payload.difficultyLevel !== undefined) setDifficultyLevel(payload.difficultyLevel)
+      showAdaptivePopup(payload.adaptiveNotification)
 
       if (isReadingPage) {
         fireReadingAdvanceAnimation()
         setFeedback('')
         setIsCorrect(null)
         setAnswerInput('')
+        setReadingQuizAnswers([])
         setHintSteps([])
         setInputState('idle')
         setPausedElapsed(0)
         setQuestionStartedAt(Date.now())
         setViewIndex(payload.currentIndex)
-      } else if (isReadingSummary) {
+      } else if (isReadingSummary || isReadingQuiz) {
         setFeedback('')
         setIsCorrect(null)
         setHintSteps([])
@@ -1035,10 +1116,18 @@ function App() {
       const res = await apiFetch(`/session/${selectedUserId}/${sessionId}/reveal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionIndex: viewIndex }),
+        body: JSON.stringify({ questionIndex: viewIndex, elapsedMs }),
       })
       if (!res.ok) throw new Error('Failed to reveal answer')
-      const data = (await res.json()) as { correctAnswer: number; explanation: string; currentIndex: number; answers: AnswerState[]; questions: Question[] }
+      const data = (await res.json()) as {
+        correctAnswer: number
+        explanation: string
+        currentIndex: number
+        answers: AnswerState[]
+        questions: Question[]
+        difficultyLevel?: number
+        adaptiveNotification?: AdaptiveNotification | null
+      }
       setAnswers(data.answers)
       setQuestions(data.questions)
       setCurrentIndex(data.currentIndex)
@@ -1046,6 +1135,8 @@ function App() {
       setFeedback(`The answer is ${data.correctAnswer}. ${data.explanation}`)
       setInputState('incorrect')
       setHintSteps([])
+      if (data.difficultyLevel !== undefined) setDifficultyLevel(data.difficultyLevel)
+      showAdaptivePopup(data.adaptiveNotification)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Reveal failed')
     } finally {
@@ -1093,6 +1184,7 @@ function App() {
     setFeedback('')
     setIsCorrect(null)
     setAnswerInput('')
+    setReadingQuizAnswers([])
     setInputState('idle')
     setHintSteps([])
     setViewIndex(currentIndex)
@@ -1126,11 +1218,12 @@ function App() {
   const readingSummary = useMemo(() => {
     const readingPages = questions.filter((question) => question.kind === 'reading-page')
     const totalWords = readingPages.reduce((sum, question) => sum + (question.wordCount ?? 0), 0)
-    const totalReadingMs = answers
-      .filter((answer, index) => questions[index]?.kind === 'reading-page' && answer.completed)
-      .reduce((sum, answer) => sum + answer.elapsedMs, 0)
     const finalAnswer = answers.find((_answer, index) => questions[index]?.kind === 'reading-summary')
-    const averageWpm = finalAnswer?.readingWpm ?? (totalWords > 0 && totalReadingMs > 0 ? Math.round(totalWords / (totalReadingMs / 60000)) : 0)
+      ?? answers.find((_answer, index) => questions[index]?.kind === 'reading-quiz')
+    const assessmentMode = questions.find((_question, index) => answers[index] === finalAnswer)?.kind === 'reading-quiz'
+      ? 'quiz'
+      : 'summary'
+    const averageWpm = finalAnswer?.readingWpm ?? 0
     return {
       pagesRead: readingPages.length,
       totalWords,
@@ -1138,6 +1231,10 @@ function App() {
       overallScore: finalAnswer?.readingScore ?? 0,
       comprehensionScore: finalAnswer?.comprehensionScore ?? 0,
       speedScore: finalAnswer?.speedScore ?? 0,
+      assessmentMode,
+      warning: averageWpm >= 220
+        ? 'This pace was extremely fast for the passage. Next time, slow down enough to really absorb the meaning.'
+        : '',
     }
   }, [answers, questions])
 
@@ -1238,6 +1335,7 @@ function App() {
   if (stage === 'home') {
     const streak = dashStats?.currentStreak ?? 0
     const activityDays = dashStats?.activityDays ?? []
+    const readingLaunchInProgress = launchState?.subject === 'Reading' && launchState.mode === 'start'
 
     return (
       <div className="dashboard-screen">
@@ -1271,10 +1369,22 @@ function App() {
           {/* Subject Selection — primary action, shown near top */}
           <div className="subjects-section">
             <h3 className="panel-title">📚 Choose a Subject</h3>
+            {readingLaunchInProgress && (
+              <div className="reading-launch-banner" role="status" aria-live="polite">
+                <div className="reading-launch-spinner">
+                  <span className="loading-dots"><span /><span /><span /></span>
+                </div>
+                <div>
+                  <p className="reading-launch-title">Preparing a fresh reading story</p>
+                  <p className="reading-launch-copy">Your next passage is loading now. Stay with me for a moment.</p>
+                </div>
+              </div>
+            )}
             <div className="subjects-grid">
               {ACTIVE_SUBJECTS.map((subject) => {
                 const latestInProgressSession = latestInProgressBySubject[subject.id]
                 const unfinishedForSubject = inProgressSessions.filter((session) => session.subject === subject.id)
+                const isLaunchingThisSubject = launchState?.subject === subject.id
                 return (
                   <div key={subject.id} className="subject-card active">
                     <div className="subject-badge">Active</div>
@@ -1306,7 +1416,18 @@ function App() {
                       onClick={() => requestStartSession(subject.id)}
                       disabled={isBusy}
                     >
-                      {isBusy ? (
+                      {isLaunchingThisSubject ? (
+                        <>
+                          <span className="loading-dots"><span /><span /><span /></span>
+                          <span>
+                            {launchState?.mode === 'resume'
+                              ? 'Opening Session...'
+                              : subject.id === 'Reading'
+                                ? 'Preparing Story...'
+                                : 'Starting Session...'}
+                          </span>
+                        </>
+                      ) : isBusy ? (
                         <span className="loading-dots"><span /><span /><span /></span>
                       ) : latestInProgressSession ? 'Continue Session →' : 'Start Session →'}
                     </button>
@@ -1325,6 +1446,9 @@ function App() {
                 <div className="insights-overview-stat">
                   <span className="insights-overview-value">{insights.overall.completedSessions}</span>
                   <span className="insights-overview-label">Completed Sessions</span>
+                  <span className="insights-overview-subtext">
+                    Multiplication {insights.overall.subjectSessionBreakdown.Multiplication} · Division {insights.overall.subjectSessionBreakdown.Division} · Reading {insights.overall.subjectSessionBreakdown.Reading}
+                  </span>
                 </div>
                 <div className="insights-overview-stat">
                   <span className="insights-overview-value">{insights.overall.totalQuestionsAnswered}</span>
@@ -1367,16 +1491,27 @@ function App() {
               )}
               {insights.bySubject.length > 0 && (
                 <div className="subject-insights-grid">
-                  {insights.bySubject.map((subjectInsight) => (
-                    <div key={subjectInsight.subject} className={`subject-insight-card trend-${subjectInsight.trend}`}>
-                      <div className="subject-insight-header">
-                        <div>
-                          <p className="subject-insight-name">{subjectInsight.subject}</p>
-                          <p className="subject-insight-headline">{subjectInsight.headline}</p>
+                  {insights.bySubject.map((subjectInsight) => {
+                    const trendMeta = getSubjectTrendMeta(subjectInsight.trend)
+
+                    return (
+                      <div key={subjectInsight.subject} className={`subject-insight-card trend-${subjectInsight.trend}`}>
+                        <div className="subject-insight-header">
+                          <div>
+                            <p className="subject-insight-name">{subjectInsight.subject}</p>
+                            <p className="subject-insight-headline">{subjectInsight.headline}</p>
+                          </div>
+                          <div className="subject-insight-meta">
+                            <span className="subject-insight-sessions">
+                              {subjectInsight.sessionsCompleted} session{subjectInsight.sessionsCompleted === 1 ? '' : 's'}
+                            </span>
+                            <span className={`subject-insight-trend trend-${subjectInsight.trend}`}>
+                              <span className="subject-insight-trend-icon" aria-hidden="true">{trendMeta.icon}</span>
+                              <span>{trendMeta.label}</span>
+                            </span>
+                          </div>
                         </div>
-                        <span className="subject-insight-trend">{getSubjectTrendLabel(subjectInsight.trend)}</span>
-                      </div>
-                      <div className="subject-insight-metrics">
+                        <div className="subject-insight-metrics">
                         {subjectInsight.metrics.accuracy !== null && (
                           <div className="subject-insight-metric">
                             <span className="subject-insight-metric-value">{subjectInsight.metrics.accuracy}%</span>
@@ -1401,24 +1536,25 @@ function App() {
                             <span className="subject-insight-metric-label">Comprehension</span>
                           </div>
                         )}
-                      </div>
-                      <div className="subject-insight-columns">
-                        <div>
-                          <p className="subject-insight-section-title">Going Well</p>
-                          <ul className="insight-list compact">
-                            {subjectInsight.strengths.map((item) => <li key={item}>{item}</li>)}
-                          </ul>
                         </div>
-                        <div>
-                          <p className="subject-insight-section-title">Focus Next</p>
-                          <ul className="insight-list compact">
-                            {subjectInsight.focusAreas.map((item) => <li key={item}>{item}</li>)}
-                          </ul>
+                        <div className="subject-insight-columns">
+                          <div>
+                            <p className="subject-insight-section-title">Going Well</p>
+                            <ul className="insight-list compact">
+                              {subjectInsight.strengths.map((item) => <li key={item}>{item}</li>)}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="subject-insight-section-title">Focus Next</p>
+                            <ul className="insight-list compact">
+                              {subjectInsight.focusAreas.map((item) => <li key={item}>{item}</li>)}
+                            </ul>
+                          </div>
                         </div>
+                        <p className="subject-insight-next-step">{subjectInsight.recommendedNextStep}</p>
                       </div>
-                      <p className="subject-insight-next-step">{subjectInsight.recommendedNextStep}</p>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1444,6 +1580,7 @@ function App() {
   if (stage === 'session' && currentQuestion) {
     const isCurrentQuestion = viewIndex === currentIndex
     const isCompleted = currentAnswerState?.completed ?? false
+    const canContinueAfterFeedback = isCorrect === true || Boolean(currentAnswerState?.usedReveal || viewIndex < currentIndex)
     const isViewingPast = viewIndex < currentIndex
 
     return (
@@ -1497,8 +1634,15 @@ function App() {
             <span className="question-counter">
               Question {viewIndex + 1} of {questions.length}
             </span>
-            <div className={`question-type-badge ${currentQuestion.type}`}>
-              {getQuestionTypeBadge(currentQuestion.type)}
+            <div className="question-badge-row">
+              {!isReadingSession && (
+                <div className="question-difficulty-chip">
+                  Adaptive Level {difficultyLevel}/5
+                </div>
+              )}
+              <div className={`question-type-badge ${currentQuestion.type}`}>
+                {getQuestionTypeBadge(currentQuestion.type)}
+              </div>
             </div>
           </div>
 
@@ -1573,7 +1717,7 @@ function App() {
                     <p className="reading-page-title">{currentQuestion.title}</p>
                     <p className="reading-page-meta">{currentQuestion.wordCount ?? 0} words on this page</p>
                   </div>
-                  <div className="reading-target-chip">Target pace: 120-140 WPM</div>
+                  <div className="reading-target-chip">Target pace: 170 WPM</div>
                 </div>
                 <div className="reading-page-content">
                   {currentQuestion.content}
@@ -1595,8 +1739,50 @@ function App() {
               </div>
             )}
 
+            {isReadingQuiz && (
+              <div className="reading-page-panel">
+                <div className="reading-page-header">
+                  <div>
+                    <p className="reading-page-title">{currentQuestion.title}</p>
+                    <p className="reading-page-meta">Answer each multiple choice question before submitting.</p>
+                  </div>
+                  <div className="reading-target-chip">Fast-read check</div>
+                </div>
+                {currentQuestion.content && (
+                  <div className="reading-warning-panel">{currentQuestion.content}</div>
+                )}
+                <div className="reading-quiz-list">
+                  {currentQuestion.quizItems?.map((item, itemIndex) => (
+                    <div key={item.id} className="reading-quiz-item">
+                      <p className="reading-quiz-question">{itemIndex + 1}. {item.prompt}</p>
+                      <div className="reading-quiz-options">
+                        {item.options.map((option, optionIndex) => (
+                          <button
+                            key={`${item.id}-${optionIndex}`}
+                            type="button"
+                            className={`reading-quiz-option ${readingQuizAnswers[itemIndex] === optionIndex ? 'selected' : ''}`}
+                            onClick={() => {
+                              setReadingQuizAnswers((current) => {
+                                const next = current.length > 0 ? [...current] : Array.from({ length: currentQuestion.quizItems?.length ?? 0 }, () => -1)
+                                next[itemIndex] = optionIndex
+                                return next
+                              })
+                            }}
+                            disabled={!isCurrentQuestion || isCompleted}
+                          >
+                            <span className="reading-quiz-option-marker">{String.fromCharCode(65 + optionIndex)}</span>
+                            <span>{option}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Answer Input */}
-            {!isReadingPage && (
+            {!isReadingPage && !isReadingQuiz && (
               <div className="answer-section">
                 <label className="answer-label">{isReadingSummary ? 'Your Summary' : 'Your Answer'}</label>
                 <div className="answer-input-wrap">
@@ -1636,9 +1822,9 @@ function App() {
                 <button
                   className="btn-submit"
                   onClick={() => void submitAnswer()}
-                  disabled={isBusy || (!isReadingPage && !answerInput.trim())}
+                  disabled={isBusy || (!isReadingPage && !isReadingQuiz && !answerInput.trim()) || (isReadingQuiz && readingQuizAnswers.some((value) => value < 0))}
                 >
-                  {isBusy ? <span className="loading-dots"><span /><span /><span /></span> : isReadingPage ? 'Next Page →' : isReadingSummary ? 'Submit Summary' : 'Check Answer'}
+                  {isBusy ? <span className="loading-dots"><span /><span /><span /></span> : isReadingPage ? 'Next Page →' : isReadingSummary ? 'Submit Summary' : isReadingQuiz ? 'Submit Quiz' : 'Check Answer'}
                 </button>
                 {!isReadingSession && (
                   <>
@@ -1661,23 +1847,6 @@ function App() {
               </div>
             )}
 
-            {/* Difficulty Slider */}
-            {isCurrentQuestion && !isCompleted && !isReadingSession && (
-              <div className="difficulty-section">
-                <div className="difficulty-label-row">
-                  <span className="difficulty-label">How hard was this?</span>
-                  <span className="difficulty-value-label">{['', 'Easy', 'Pretty easy', 'Medium', 'Hard', 'Very hard'][selfRating]}</span>
-                </div>
-                <input
-                  className="difficulty-slider"
-                  type="range"
-                  min={1}
-                  max={5}
-                  value={selfRating}
-                  onChange={(e) => setSelfRating(Number(e.target.value))}
-                />
-              </div>
-            )}
           </div>
 
           {/* Hint Panel */}
@@ -1714,9 +1883,11 @@ function App() {
                     Retry
                   </button>
                 )}
-                <button className="btn-continue" onClick={continueToNext}>
-                  {isCorrect ? 'Continue →' : 'Move On →'}
-                </button>
+                {canContinueAfterFeedback && (
+                  <button className="btn-continue" onClick={continueToNext}>
+                    {isCorrect ? 'Continue →' : 'See Next Question →'}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1757,6 +1928,23 @@ function App() {
             </div>
           </div>
         )}
+
+        {adaptivePopup && (
+          <div className={`adaptive-popup-overlay ${adaptivePopup.kind}`}>
+            <div className={`adaptive-popup-card ${adaptivePopup.kind}`}>
+              <p className="adaptive-popup-title">{adaptivePopup.title}</p>
+              <p className="adaptive-popup-message">{adaptivePopup.message}</p>
+            </div>
+          </div>
+        )}
+        {readingSessionIntroTitle && sessionSubject === 'Reading' && (
+          <div className="reading-session-intro-overlay" role="status" aria-live="polite">
+            <div className="reading-session-intro-card">
+              <p className="reading-session-intro-kicker">Today&apos;s Story</p>
+              <p className="reading-session-intro-title">{readingSessionIntroTitle}</p>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1764,15 +1952,23 @@ function App() {
   /* ── Render: Summary ────────────────────────────────────── */
   if (stage === 'summary') {
     if (sessionSubject === 'Reading') {
-      const targetHit = readingSummary.averageWpm >= 120 && readingSummary.averageWpm <= 140
+      const targetHit = readingSummary.averageWpm >= 160 && readingSummary.averageWpm <= 180
       return (
         <div className="summary-screen">
           <div className="summary-hero">
             <span className="summary-trophy">📖</span>
             <h2>Reading Session Complete!</h2>
-            <p>You finished the story and reflected on its core meaning.</p>
+            <p>
+              {readingSummary.assessmentMode === 'quiz'
+                ? 'You finished the story and completed a comprehension check.'
+                : 'You finished the story and reflected on its core meaning.'}
+            </p>
             <div className="summary-target-badge">
-              {targetHit ? `On target at ${readingSummary.averageWpm} WPM` : `Target pace: 120-140 WPM`}
+              {targetHit
+                ? `On target at ${readingSummary.averageWpm} WPM`
+                : readingSummary.averageWpm > 190
+                  ? `Fast pace: ${readingSummary.averageWpm} WPM`
+                  : `Target pace: 170 WPM`}
             </div>
           </div>
 
@@ -1801,7 +1997,9 @@ function App() {
 
           <div className="reading-summary-note">
             You read about {readingSummary.totalWords.toLocaleString()} words across {readingSummary.pagesRead} pages.
-            Target reading pace is 120-140 WPM.
+            {' '}Target reading pace is 170 WPM.
+            {readingSummary.assessmentMode === 'quiz' && ' Because the pace was high, the final check switched to multiple choice.'}
+            {readingSummary.warning && ` ${readingSummary.warning}`}
           </div>
 
           <div className="summary-actions">

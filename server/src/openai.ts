@@ -1,4 +1,4 @@
-import type { OpenAICallStat, Question, QuestionType } from './types'
+import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, ReadingQuizItem } from './types'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -77,6 +77,14 @@ export function isOpenAIConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY)
 }
 
+function stripMarkdownFence(content: string): string {
+  return content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+}
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
+
 export async function generateHintSteps(prompt: string): Promise<string[]> {
   const content = await chatCompletion(
     [
@@ -107,7 +115,7 @@ export async function generateHintSteps(prompt: string): Promise<string[]> {
 const VALID_TYPES = new Set<QuestionType>(['decimal', 'fraction', 'percentage', 'mixed'])
 
 function parseQuestionsFromContent(content: string, count: number): Question[] {
-  const cleaned = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+  const cleaned = stripMarkdownFence(content)
 
   let raw: unknown
   try {
@@ -153,6 +161,67 @@ function parseQuestionsFromContent(content: string, count: number): Question[] {
   }
 
   return questions
+}
+
+function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
+  const cleaned = stripMarkdownFence(content)
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(cleaned)
+  } catch {
+    throw new Error('OpenAI returned non-JSON response for reading generation.')
+  }
+
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('OpenAI reading response is not an object.')
+  }
+
+  const item = raw as Record<string, unknown>
+  const title = String(item.title ?? '').trim()
+  const summaryPrompt = String(item.summaryPrompt ?? 'In about 100 words, explain the core summary of the story you just read.').trim()
+  const summaryGuidance = String(item.summaryGuidance ?? '').trim()
+  const pages = Array.isArray(item.pages) ? item.pages.map(String).map((page) => page.trim()).filter(Boolean) : []
+  const keywordGroups = Array.isArray(item.keywordGroups)
+    ? item.keywordGroups
+      .map((group) => Array.isArray(group) ? group.map(String).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean) : [])
+      .filter((group) => group.length > 0)
+    : []
+  const quizItems = Array.isArray(item.quizItems)
+    ? item.quizItems
+      .map((quizItem, index): ReadingQuizItem | null => {
+        const candidate = quizItem as Record<string, unknown>
+        const prompt = String(candidate.prompt ?? '').trim()
+        const options = Array.isArray(candidate.options) ? candidate.options.map(String).map((option) => option.trim()).filter(Boolean) : []
+        const correctOption = Number(candidate.correctOption)
+        if (!prompt || options.length !== 4 || !Number.isInteger(correctOption) || correctOption < 0 || correctOption > 3) {
+          return null
+        }
+        return {
+          id: String(candidate.id ?? `reading-quiz-${index + 1}`),
+          prompt,
+          options,
+          correctOption,
+        }
+      })
+      .filter((quizItem): quizItem is ReadingQuizItem => quizItem !== null)
+    : []
+
+  if (!title) throw new Error('OpenAI reading response is missing a title.')
+  if (pages.length !== 5) throw new Error(`OpenAI reading response must include 5 pages, received ${pages.length}.`)
+  if (pages.some((page) => countWords(page) < 120)) throw new Error('OpenAI reading response included a page that is too short.')
+  if (!summaryGuidance) throw new Error('OpenAI reading response is missing summary guidance.')
+  if (keywordGroups.length < 8) throw new Error('OpenAI reading response needs at least 8 keyword groups.')
+  if (quizItems.length !== 4) throw new Error(`OpenAI reading response must include 4 quiz items, received ${quizItems.length}.`)
+
+  return {
+    title,
+    pages,
+    summaryPrompt,
+    summaryGuidance,
+    keywordGroups,
+    quizItems,
+  }
 }
 
 export async function generateQuestionSetAI(count: number): Promise<Question[]> {
@@ -217,4 +286,90 @@ ${isCorrect ? 'The student answered correctly — briefly congratulate them and 
     0.3,
     'explanation',
   )
+}
+
+export async function generateReadingStoryAI(input: {
+  sessionId: string
+  challengeTier: 'core' | 'stretch' | 'advanced'
+  performanceSummary: string
+  priorTitles: string[]
+}): Promise<GeneratedReadingStory> {
+  const challengeNotes = {
+    core: 'Use strong Grade 6 / upper-middle-grade readability, clear plot movement, emotionally vivid scenes, and mostly direct inference.',
+    stretch: 'Raise the sophistication slightly with denser description, more layered motives, stronger inferential reading, and some richer vocabulary that remains clear in context.',
+    advanced: 'Write at the high end of middle-grade difficulty with deeper thematic texture, more nuanced emotional shifts, more subtext, and longer but still readable sentence structures.',
+  }[input.challengeTier]
+
+  const content = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `You are an expert middle-grade fiction writer and reading-assessment designer creating ORIGINAL reading passages for one child learner.
+
+Write fresh, high-quality fiction for an 11-13 year old reader. Capture qualities often admired in excellent middle-grade books: atmosphere, discovery, moral courage, resourcefulness, emotional sincerity, vivid setting, narrative momentum, and thoughtful themes.
+
+As a quality benchmark only, aim for the level of craft, seriousness, readability, and imaginative or intellectual richness that readers often value in books such as:
+- The Hobbit
+- The Golden Compass
+- The Mysterious Benedict Society
+- Artemis Fowl
+- Island of the Blue Dolphins
+- Roll of Thunder, Hear My Cry
+- The Witch of Blackbird Pond
+- Where the Mountain Meets the Moon
+- Bomb: The Race to Build—and Steal—the World's Most Dangerous Weapon
+- I Am Malala
+
+Use those titles only as a grounding reference for quality, depth, atmosphere, curiosity, courage, and age-appropriate sophistication.
+
+Do NOT imitate, paraphrase, reference, echo, or mention any specific real book, author, series, plot, or copyrighted character. Invent everything from scratch in your own wording.
+Do NOT produce "fan fiction," near-matches, homage plots, or prose that feels recognizably tied to any one listed work. Blend the broad literary qualities, not the copyrighted expression.
+
+Return ONLY a JSON object with this exact shape:
+{
+  "title": "Fresh original title",
+  "pages": ["page 1", "page 2", "page 3", "page 4", "page 5"],
+  "summaryPrompt": "In about 100 words, explain the core summary of the story you just read.",
+  "summaryGuidance": "Specific guidance for what the student should include.",
+  "keywordGroups": [["keyword1", "keyword2"], ...],
+  "quizItems": [
+    { "id": "reading-quiz-1", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 0 },
+    { "id": "reading-quiz-2", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 1 },
+    { "id": "reading-quiz-3", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 2 },
+    { "id": "reading-quiz-4", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 3 }
+  ]
+}
+
+Story requirements:
+- Exactly 5 pages.
+- Each page should be roughly 150-240 words for core, 170-260 for stretch, or 190-290 for advanced.
+- The title must be fresh and not resemble any prior title supplied by the user.
+- The protagonist should feel age-appropriate for upper elementary / middle school.
+- The story should have a clear central problem, rising tension, and a meaningful resolution.
+- The prose should feel literary and engaging, not generic, flat, or template-like.
+- Avoid repetitive sentence openings and avoid formulaic chapter endings.
+- Make the summaryGuidance specific to the actual story.
+- Provide 8-12 keywordGroups, all lowercase, each group containing alternative terms/phrases that a student summary might mention.
+- The 4 quizItems must check both literal understanding and inference, not just trivial recall.
+- Every quiz question must have exactly 4 plausible options with only one correct answer.
+
+Difficulty guidance:
+- ${challengeNotes}`,
+      },
+      {
+        role: 'user',
+        content: `Session seed: ${input.sessionId}
+Challenge tier: ${input.challengeTier}
+Current reading profile: ${input.performanceSummary}
+Avoid reusing or resembling these earlier titles: ${input.priorTitles.length > 0 ? input.priorTitles.join(' | ') : 'none yet'}
+
+Generate a fresh original reading story now.`,
+      },
+    ],
+    3200,
+    0.95,
+    'reading-story',
+  )
+
+  return parseReadingStoryFromContent(content)
 }

@@ -39,6 +39,7 @@ export function getQuestionTypeBadge(type: string): string {
     mixed: '🔀 Mixed',
     reading_page: '📄 Story Page',
     reading_summary: '📝 Summary',
+    reading_quiz: '🧠 Quiz',
   }
   return map[type] ?? type
 }

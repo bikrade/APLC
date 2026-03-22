@@ -1,6 +1,22 @@
 export type Subject = 'Multiplication' | 'Division' | 'Reading'
-export type QuestionType = 'decimal' | 'fraction' | 'percentage' | 'mixed' | 'reading_page' | 'reading_summary'
-export type QuestionKind = 'math' | 'reading-page' | 'reading-summary'
+export type QuestionType = 'decimal' | 'fraction' | 'percentage' | 'mixed' | 'reading_page' | 'reading_summary' | 'reading_quiz'
+export type QuestionKind = 'math' | 'reading-page' | 'reading-summary' | 'reading-quiz'
+
+export interface ReadingQuizItem {
+  id: string
+  prompt: string
+  options: string[]
+  correctOption: number
+}
+
+export interface GeneratedReadingStory {
+  title: string
+  pages: string[]
+  summaryPrompt: string
+  summaryGuidance: string
+  keywordGroups: string[][]
+  quizItems: ReadingQuizItem[]
+}
 
 export interface Question {
   id: string
@@ -10,6 +26,8 @@ export interface Question {
   title?: string
   content?: string
   wordCount?: number
+  quizItems?: ReadingQuizItem[]
+  readingKeywordGroups?: string[][]
   answer: number
   tolerance: number
   helpSteps: string[]
@@ -24,11 +42,13 @@ export interface QuestionState {
   userTextAnswer?: string
   isCorrect?: boolean
   completed: boolean
-  selfRating?: number
   usedHelp: boolean
   usedReveal: boolean
   elapsedMs: number
   startedAt?: number
+  attemptCount?: number
+  firstAttemptCorrect?: boolean
+  selectedOptions?: number[]
   readingScore?: number
   comprehensionScore?: number
   speedScore?: number
@@ -46,6 +66,12 @@ export interface SessionRecord {
   questions: Question[]
   answers: QuestionState[]
   totalTokensUsed: number
+  adaptiveDifficultyLevel?: number
+  adaptiveMomentum?: number
+  adaptiveQuestionsSinceChange?: number
+  readingChallengeTier?: 'core' | 'stretch' | 'advanced'
+  readingPerformanceSummary?: string
+  readingPriorTitles?: string[]
 }
 
 export interface UserProfile {

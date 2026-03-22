@@ -4,18 +4,18 @@
 
 - `UserProfile`: learner identity and learning metadata.
 - `SessionRecord`: one practice session containing generated questions and answer states.
-- `QuestionState`: per-question progress and telemetry (time, rating, reveal/help usage).
+- `QuestionState`: per-question progress and telemetry (time, reveal/help usage, attempts, reading metrics).
 
 ## Schemas
 
 - `profile.json`
   - `id`, `name`, `learningFocus`, `timezone`, `notes`
 - `sessions/<sessionId>.json`
-  - `id`, `userId`, `subject` (Multiplication | Division | Reading), `status` (active | completed), `startedAt`, `completedAt?`, `currentIndex`, `questions[]`, `answers[]`, `totalTokensUsed`
-  - Each question: `id`, `prompt`, `type`, `kind?` (math | reading-page | reading-summary), `answer`, `tolerance`, `helpSteps[]`, `explanation`, `generated`, `title?`, `content?`, `wordCount?`
-  - Each answer: `questionId`, `questionIndex`, `completed`, `isCorrect?`, `usedHelp`, `usedReveal`, `elapsedMs`, `userAnswer?`, `userTextAnswer?`, `selfRating?`, `readingScore?`, `comprehensionScore?`, `speedScore?`, `readingWpm?`
+  - `id`, `userId`, `subject` (Multiplication | Division | Reading), `status` (active | completed), `startedAt`, `completedAt?`, `currentIndex`, `questions[]`, `answers[]`, `totalTokensUsed`, `adaptiveDifficultyLevel?`, `adaptiveMomentum?`
+  - Each question: `id`, `prompt`, `type`, `kind?` (math | reading-page | reading-summary | reading-quiz), `answer`, `tolerance`, `helpSteps[]`, `explanation`, `generated`, `title?`, `content?`, `wordCount?`, `quizItems?`
+  - Each answer: `questionId`, `questionIndex`, `completed`, `isCorrect?`, `usedHelp`, `usedReveal`, `elapsedMs`, `userAnswer?`, `userTextAnswer?`, `selectedOptions?`, `attemptCount?`, `firstAttemptCorrect?`, `readingScore?`, `comprehensionScore?`, `speedScore?`, `readingWpm?`
 - `insights.txt`
-  - Plain-text file with `[Going Well]` and `[Focus Areas]` sections; refreshed after each completed session
+  - JSON payload persisted as text for the dashboard insights view; refreshed after each completed session
 
 ## Folder Structure
 

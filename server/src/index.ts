@@ -24,7 +24,15 @@ import {
 import type { QuestionState, SessionRecord, Subject } from './types'
 import { createQuestionPlaceholder, generateQuestionByType, getQuestionTypeForIndex, isAnswerCorrect, parseAnswer } from './utils'
 import { generateHintSteps, generateExplanation, isOpenAIConfigured, flushCallStats } from './openai'
-import { evaluateReadingSummary, getReadingQuestionCount } from './reading'
+import {
+  createReadingAssessmentQuestion,
+  createReadingQuestionSetAsync,
+  evaluateReadingQuiz,
+  evaluateReadingSummary,
+  getReadingGenerationInputs,
+  getReadingAssessmentMode,
+  getReadingQuestionCount,
+} from './reading'
 import { logger, requestLogger, asyncHandler } from './logger'
 
 const app = express()
@@ -178,10 +186,11 @@ type InsightPayload = {
     totalQuestionsAnswered: number
     strongestSubject: Subject | null
     needsAttentionSubject: Subject | null
+    subjectSessionBreakdown: Record<Subject, number>
   }
 }
 
-type InsightTrend = 'improving' | 'steady' | 'building' | 'needs-attention'
+type InsightTrend = 'improving' | 'steady' | 'declining'
 
 type SubjectInsight = {
   subject: Subject
@@ -209,6 +218,12 @@ type AuthenticatedRequest = Request & {
     userId: string
     exp: number
   }
+}
+
+type AdaptiveNotification = {
+  kind: 'difficulty-up' | 'difficulty-down' | 'reading-warning'
+  title: string
+  message: string
 }
 
 function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
@@ -247,6 +262,11 @@ function toClientQuestion(question: SessionRecord['questions'][number], index: n
     title: question.title,
     content: question.content,
     wordCount: question.wordCount,
+    quizItems: question.quizItems?.map((item) => ({
+      id: item.id,
+      prompt: item.prompt,
+      options: item.options,
+    })),
     index,
   }
 }
@@ -257,8 +277,179 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
     return
   }
 
-  session.questions[index] = generateQuestionByType(existing.id, existing.type, session.subject)
+  if (session.subject === 'Reading') {
+    const readingOptions = {
+      ...(session.readingChallengeTier ? { challengeTier: session.readingChallengeTier } : {}),
+      ...(session.readingPerformanceSummary ? { performanceSummary: session.readingPerformanceSummary } : {}),
+      ...(session.readingPriorTitles ? { priorTitles: session.readingPriorTitles } : {}),
+    }
+    session.questions = await createReadingQuestionSetAsync(session.id, readingOptions)
+  } else {
+    session.questions[index] = generateQuestionByType(existing.id, existing.type, session.subject, session.adaptiveDifficultyLevel ?? 3)
+  }
   await saveSession(session)
+}
+
+function clampDifficultyLevel(level: number): number {
+  return Math.min(5, Math.max(1, Math.round(level)))
+}
+
+function getCompletedMathAnswersForSubject(allSessions: SessionRecord[], subject: Subject): Array<{
+  answer: QuestionState
+  session: SessionRecord
+}> {
+  return allSessions
+    .filter((session) => session.status === 'completed' && session.subject === subject)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .flatMap((session) =>
+      session.answers
+        .filter((answer) => answer.completed)
+        .map((answer) => ({ answer, session })),
+    )
+}
+
+function computeAdaptiveDifficultyLevel(allSessions: SessionRecord[], subject: Subject): number {
+  if (subject === 'Reading') return 3
+
+  const recentAnswers = getCompletedMathAnswersForSubject(allSessions, subject).slice(0, 20)
+  if (recentAnswers.length < 6) return 3
+
+  const correctCount = recentAnswers.filter(({ answer }) => answer.isCorrect).length
+  const firstAttemptCorrectCount = recentAnswers.filter(({ answer }) =>
+    answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal),
+  ).length
+  const slowCount = recentAnswers.filter(({ answer }) => answer.elapsedMs >= 120_000).length
+  const helpOrRevealCount = recentAnswers.filter(({ answer }) => answer.usedHelp || answer.usedReveal).length
+  const avgSeconds = Math.round(recentAnswers.reduce((sum, { answer }) => sum + answer.elapsedMs, 0) / recentAnswers.length / 1000)
+
+  const accuracy = Math.round((correctCount / recentAnswers.length) * 100)
+  const firstAttemptRate = Math.round((firstAttemptCorrectCount / recentAnswers.length) * 100)
+  const supportRate = Math.round((helpOrRevealCount / recentAnswers.length) * 100)
+  let level = 3
+
+  if (accuracy >= 90) level += 1
+  if (accuracy >= 96 && firstAttemptRate >= 88 && avgSeconds <= 70) level += 1
+  if (firstAttemptRate < 72) level -= 1
+  if (accuracy < 72) level -= 1
+  if (avgSeconds > 120 || slowCount >= Math.ceil(recentAnswers.length / 3)) level -= 1
+  if (supportRate > 20) level -= 1
+
+  return clampDifficultyLevel(level)
+}
+
+function maybeAdjustDifficulty(
+  session: SessionRecord,
+  state: QuestionState,
+  reason: 'wrong-first-attempt' | 'correct-answer' | 'reveal',
+): AdaptiveNotification | null {
+  if (session.subject === 'Reading') return null
+
+  const currentLevel = clampDifficultyLevel(session.adaptiveDifficultyLevel ?? 3)
+  let momentum = session.adaptiveMomentum ?? 0
+  let questionsSinceChange = session.adaptiveQuestionsSinceChange ?? 0
+  const attemptCount = state.attemptCount ?? 0
+  const elapsedMs = state.elapsedMs ?? 0
+  const usedSupport = state.usedHelp || state.usedReveal
+
+  if (reason === 'wrong-first-attempt') {
+    momentum -= elapsedMs >= 150_000 ? 0.85 : 0.65
+  } else if (reason === 'reveal') {
+    momentum -= elapsedMs >= 150_000 || state.usedHelp ? 1.1 : 0.9
+  } else {
+    const firstAttemptCorrect = state.firstAttemptCorrect ?? false
+    const veryFast = elapsedMs > 0 && elapsedMs <= 40_000
+    const solidPace = elapsedMs > 0 && elapsedMs <= 70_000
+    const verySlow = elapsedMs >= 150_000
+    const supported = usedSupport || attemptCount > 1
+
+    if (firstAttemptCorrect && !supported && veryFast) momentum += 0.9
+    else if (firstAttemptCorrect && !supported && solidPace) momentum += 0.65
+    else if (firstAttemptCorrect && !supported && elapsedMs <= 95_000) momentum += 0.35
+    else if (state.usedReveal || verySlow || attemptCount >= 3) momentum -= 0.75
+    else if (usedSupport || attemptCount > 1 || elapsedMs >= 120_000) momentum -= 0.45
+    else momentum += 0.1
+  }
+
+  questionsSinceChange += 1
+  session.adaptiveMomentum = Number(momentum.toFixed(2))
+  session.adaptiveQuestionsSinceChange = questionsSinceChange
+  if (questionsSinceChange >= 3 && session.adaptiveMomentum >= 2.3 && currentLevel < 5) {
+    session.adaptiveDifficultyLevel = currentLevel + 1
+    session.adaptiveMomentum = 0.35
+    session.adaptiveQuestionsSinceChange = 0
+    return {
+      kind: 'difficulty-up',
+      title: 'Leveling Up',
+      message: `You have been steadily answering with strong focus, so I’m nudging the next ${session.subject.toLowerCase()} questions up just a little to keep things interesting.`,
+    }
+  }
+
+  if (questionsSinceChange >= 3 && session.adaptiveMomentum <= -2.3 && currentLevel > 1) {
+    session.adaptiveDifficultyLevel = currentLevel - 1
+    session.adaptiveMomentum = -0.35
+    session.adaptiveQuestionsSinceChange = 0
+    return {
+      kind: 'difficulty-down',
+      title: 'Dialing It Down',
+      message: `This set looks a bit heavy right now, so I’m dialing the next ${session.subject.toLowerCase()} questions down slightly to help you rebuild confidence and keep enjoying the practice.`,
+    }
+  }
+
+  return null
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function getSubjectSessionTrend(subject: Subject, sessions: SessionRecord[]): InsightTrend {
+  if (sessions.length < 2) return 'steady'
+
+  const latestCount = sessions.length >= 4 ? 2 : 1
+  const latestSessions = sessions.slice(0, latestCount)
+  const previousSessions = sessions.slice(latestCount, latestCount + Math.min(3, sessions.length - latestCount))
+  if (previousSessions.length === 0) return 'steady'
+
+  const getMathSessionScore = (session: SessionRecord): number | null => {
+    const completedAnswers = session.answers.filter((answer) => answer.completed)
+    if (completedAnswers.length === 0) return null
+
+    const accuracy = (completedAnswers.filter((answer) => answer.isCorrect).length / completedAnswers.length) * 100
+    const avgSeconds = completedAnswers.reduce((sum, answer) => sum + answer.elapsedMs, 0) / completedAnswers.length / 1000
+    const revealRate = (completedAnswers.filter((answer) => answer.usedReveal).length / completedAnswers.length) * 100
+    const firstAttemptRate = (
+      completedAnswers.filter((answer) =>
+        answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal),
+      ).length / completedAnswers.length
+    ) * 100
+
+    const paceScore = Math.max(0, Math.min(100, 100 - Math.max(avgSeconds - 55, 0) * 0.7))
+    const independenceScore = Math.max(0, 100 - revealRate * 2)
+    return accuracy * 0.5 + firstAttemptRate * 0.25 + paceScore * 0.15 + independenceScore * 0.1
+  }
+
+  const getReadingSessionScore = (session: SessionRecord): number | null => {
+    const summaryAnswers = session.answers.filter((answer) => answer.completed && typeof answer.readingScore === 'number')
+    if (summaryAnswers.length === 0) return null
+
+    return summaryAnswers.reduce((sum, answer) => {
+      const readingQuality = (answer.readingScore ?? 0) * 10
+      const comprehension = (answer.comprehensionScore ?? 0) * 10
+      return sum + readingQuality * 0.65 + comprehension * 0.35
+    }, 0) / summaryAnswers.length
+  }
+
+  const getSessionScore = subject === 'Reading' ? getReadingSessionScore : getMathSessionScore
+  const latestAverage = average(latestSessions.map(getSessionScore).filter((score): score is number => score !== null))
+  const previousAverage = average(previousSessions.map(getSessionScore).filter((score): score is number => score !== null))
+
+  if (latestAverage === null || previousAverage === null) return 'steady'
+
+  const delta = latestAverage - previousAverage
+  if (delta >= 6) return 'improving'
+  if (delta <= -6) return 'declining'
+  return 'steady'
 }
 
 function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): InsightPayload {
@@ -277,6 +468,11 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
         totalQuestionsAnswered: 0,
         strongestSubject: null,
         needsAttentionSubject: null,
+        subjectSessionBreakdown: {
+          Multiplication: 0,
+          Division: 0,
+          Reading: 0,
+        },
       },
     }
   }
@@ -291,9 +487,9 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
   const subjectScores: Array<{ subject: Subject; score: number }> = []
 
   const bySubject = subjects.map((subject) => {
-    const subjectSessions = completedSessions.filter((session) => session.subject === subject)
-    const recentSubjectSessions = subjectSessions.slice(0, 3)
-    const olderSubjectSessions = subjectSessions.slice(3)
+    const subjectSessions = completedSessions
+      .filter((session) => session.subject === subject)
+      .sort((a, b) => new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime())
 
     let totalAnswered = 0
     let totalCorrect = 0
@@ -346,25 +542,7 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
     const comprehensionScore = readingSamples > 0 ? Number((comprehensionTotal / readingSamples).toFixed(1)) : null
     const readingScore = readingSamples > 0 ? Number((readingScoreTotal / readingSamples).toFixed(1)) : null
 
-    const recentAccuracy = (() => {
-      const answers = recentSubjectSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
-      if (answers.length === 0) return null
-      const correct = answers.filter((answer) => answer.isCorrect).length
-      return Math.round((correct / answers.length) * 100)
-    })()
-
-    const olderAccuracy = (() => {
-      const answers = olderSubjectSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
-      if (answers.length === 0) return null
-      const correct = answers.filter((answer) => answer.isCorrect).length
-      return Math.round((correct / answers.length) * 100)
-    })()
-
-    let trend: InsightTrend = 'building'
-    if (subjectSessions.length === 0) trend = 'building'
-    else if (recentAccuracy !== null && olderAccuracy !== null && recentAccuracy >= olderAccuracy + 8) trend = 'improving'
-    else if (accuracy !== null && accuracy < 70) trend = 'needs-attention'
-    else trend = 'steady'
+    const trend = getSubjectSessionTrend(subject, subjectSessions)
 
     const weakestType = [...questionTypeStats.entries()]
       .filter(([, value]) => value.total >= 2)
@@ -382,20 +560,20 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
       focusAreas.push(`Complete your first ${subject.toLowerCase()} session so this area can start giving Adi targeted coaching.`)
     } else if (subject === 'Reading') {
       if (readingScore !== null && readingScore >= 8) strengths.push(`Reading quality is strong at ${readingScore}/10 overall.`)
-      if (averageWpm !== null && averageWpm >= 120 && averageWpm <= 140) strengths.push(`Reading pace is on target at ${averageWpm} WPM.`)
+      if (averageWpm !== null && averageWpm >= 160 && averageWpm <= 180) strengths.push(`Reading pace is on target at ${averageWpm} WPM.`)
       if (comprehensionScore !== null && comprehensionScore >= 8) strengths.push(`Comprehension is a strength at ${comprehensionScore}/10.`)
 
-      if (averageWpm !== null && averageWpm < 120) focusAreas.push(`Reading pace is ${averageWpm} WPM. Aim for the 120-140 WPM target range.`)
-      if (averageWpm !== null && averageWpm > 140) focusAreas.push(`Reading pace is ${averageWpm} WPM. Slow down slightly to protect comprehension.`)
+      if (averageWpm !== null && averageWpm < 160) focusAreas.push(`Reading pace is ${averageWpm} WPM. Work toward the 170 WPM target pace.`)
+      if (averageWpm !== null && averageWpm > 190) focusAreas.push(`Reading pace is ${averageWpm} WPM. Slow down slightly to protect comprehension.`)
       if (comprehensionScore !== null && comprehensionScore < 7) focusAreas.push(`Comprehension is ${comprehensionScore}/10. Focus on main idea and supporting details.`)
 
       headline = readingScore !== null
-        ? `Reading is ${trend === 'improving' ? 'improving' : 'settling'} at ${readingScore}/10 overall.`
+        ? `Reading is ${trend === 'improving' ? 'improving' : trend === 'declining' ? 'slipping a little' : 'holding steady'} at ${readingScore}/10 overall.`
         : 'Reading has enough data to start building a clearer pattern.'
       recommendedNextStep = comprehensionScore !== null && comprehensionScore < 7
         ? 'After each page, pause and say the main idea out loud before writing the summary.'
-        : averageWpm !== null && averageWpm < 120
-          ? 'Do one reading session focused on steady pace instead of speed.'
+        : averageWpm !== null && averageWpm < 160
+          ? 'Do one reading session focused on building toward a steady 170 WPM pace without losing meaning.'
           : 'Keep balancing reading pace and comprehension to deepen consistency.'
     } else {
       if (accuracy !== null && accuracy >= 85) strengths.push(`${subject} accuracy is strong at ${accuracy}%.`)
@@ -463,6 +641,11 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
     : 0
   const strongestSubject = [...subjectScores].sort((a, b) => b.score - a.score)[0]?.subject ?? null
   const needsAttentionSubject = [...subjectScores].sort((a, b) => a.score - b.score)[0]?.subject ?? null
+  const subjectSessionBreakdown = {
+    Multiplication: bySubject.find((subject) => subject.subject === 'Multiplication')?.sessionsCompleted ?? 0,
+    Division: bySubject.find((subject) => subject.subject === 'Division')?.sessionsCompleted ?? 0,
+    Reading: bySubject.find((subject) => subject.subject === 'Reading')?.sessionsCompleted ?? 0,
+  }
 
   const strengths: string[] = []
   const improvements: string[] = []
@@ -499,6 +682,7 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
       totalQuestionsAnswered: overall.totalQuestionsAnswered,
       strongestSubject,
       needsAttentionSubject,
+      subjectSessionBreakdown,
     },
   }
 }
@@ -771,6 +955,9 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   await deleteLegacySessionFiles(userId)
   const existingActiveSession = await pruneActiveSessionsForSubject(userId, requestedSubject)
   if (existingActiveSession) {
+    existingActiveSession.adaptiveDifficultyLevel = clampDifficultyLevel(existingActiveSession.adaptiveDifficultyLevel ?? 3)
+    existingActiveSession.adaptiveMomentum = existingActiveSession.adaptiveMomentum ?? 0
+    existingActiveSession.adaptiveQuestionsSinceChange = existingActiveSession.adaptiveQuestionsSinceChange ?? 0
     sessions.set(sessionKey(userId, existingActiveSession.id), existingActiveSession)
     await ensureQuestionGenerated(existingActiveSession, existingActiveSession.currentIndex)
     res.json({
@@ -781,9 +968,15 @@ app.post('/session/start', asyncHandler(async (req, res) => {
       answers: existingActiveSession.answers,
       currentIndex: existingActiveSession.currentIndex,
       totalTokensUsed: existingActiveSession.totalTokensUsed,
+      difficultyLevel: existingActiveSession.adaptiveDifficultyLevel ?? 3,
     })
     return
   }
+  const allSessions = await listAllSessions(userId)
+  const startingDifficultyLevel = computeAdaptiveDifficultyLevel(allSessions, requestedSubject)
+  const readingGenerationInputs = requestedSubject === 'Reading'
+    ? getReadingGenerationInputs(allSessions)
+    : null
   const safeCount = requestedSubject === 'Reading'
     ? getReadingQuestionCount()
     : Math.min(15, Math.max(10, questionCount))
@@ -802,6 +995,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     usedHelp: false,
     usedReveal: false,
     elapsedMs: 0,
+    attemptCount: 0,
   }))
 
   const session: SessionRecord = {
@@ -814,6 +1008,16 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     questions,
     answers,
     totalTokensUsed: 0,
+    adaptiveDifficultyLevel: startingDifficultyLevel,
+    adaptiveMomentum: 0,
+    adaptiveQuestionsSinceChange: 0,
+    ...(readingGenerationInputs
+      ? {
+          readingChallengeTier: readingGenerationInputs.challengeTier,
+          readingPerformanceSummary: readingGenerationInputs.performanceSummary,
+          readingPriorTitles: readingGenerationInputs.priorTitles,
+        }
+      : {}),
   }
   await ensureQuestionGenerated(session, 0)
   sessions.set(sessionKey(userId, session.id), session)
@@ -830,6 +1034,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     answers,
     currentIndex: session.currentIndex,
     totalTokensUsed: session.totalTokensUsed,
+    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
   })
 }))
 
@@ -870,6 +1075,7 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
     questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
     answers: session.answers,
     totalTokensUsed: session.totalTokensUsed,
+    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
   })
 }))
 
@@ -929,6 +1135,7 @@ app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
 app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => {
   const { userId, sessionId } = req.params
   const questionIndex = Number(req.body?.questionIndex)
+  const elapsedMs = Number(req.body?.elapsedMs || 0)
   const key = sessionKey(userId, sessionId)
   let session = sessions.get(key)
   if (!session) {
@@ -958,6 +1165,10 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
   answerState.usedReveal = true
   answerState.completed = true
   answerState.isCorrect = false
+  answerState.attemptCount = Math.max(1, answerState.attemptCount ?? 0)
+  answerState.firstAttemptCorrect = false
+  answerState.elapsedMs = Math.max(answerState.elapsedMs ?? 0, Math.max(0, elapsedMs))
+  const adaptiveNotification = maybeAdjustDifficulty(session, answerState, 'reveal')
   if (questionIndex === session.currentIndex && session.currentIndex < session.questions.length - 1) {
     session.currentIndex += 1
     await ensureQuestionGenerated(session, session.currentIndex)
@@ -972,6 +1183,8 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     currentIndex: session.currentIndex,
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
+    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
+    adaptiveNotification,
   })
 }))
 
@@ -980,7 +1193,6 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
   const questionIndex = Number(req.body?.questionIndex)
   const answerRaw = String(req.body?.answer ?? '')
   const elapsedMs = Number(req.body?.elapsedMs || 0)
-  const selfRating = Number(req.body?.selfRating || 3)
   const key = sessionKey(userId, sessionId)
   let session = sessions.get(key)
   if (!session) {
@@ -1009,9 +1221,21 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
       state.completed = true
       state.isCorrect = true
       state.elapsedMs = Math.max(0, elapsedMs)
+      let adaptiveNotification: AdaptiveNotification | null = null
       if (session.currentIndex < session.questions.length - 1) {
         session.currentIndex += 1
         await ensureQuestionGenerated(session, session.currentIndex)
+        if (session.currentIndex === session.questions.length - 1 && getReadingAssessmentMode(session.questions, session.answers) === 'quiz') {
+          const currentQuestion = getQuestionAt(session, session.currentIndex)
+          if (currentQuestion) {
+            session.questions[session.currentIndex] = createReadingAssessmentQuestion(currentQuestion.id, session.questions, session.answers)
+          }
+          adaptiveNotification = {
+            kind: 'reading-warning',
+            title: 'Quick Comprehension Check',
+            message: 'You read this passage very quickly, so I’m switching the final reflection to a short quiz to make sure the meaning really landed.',
+          }
+        }
       } else {
         session.status = 'completed'
         session.completedAt = new Date().toISOString()
@@ -1025,17 +1249,47 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
         answers: session.answers,
         questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
         totalTokensUsed: session.totalTokensUsed,
+        adaptiveNotification,
       })
       return
     }
 
-    const summaryText = answerRaw.trim()
-    if (!summaryText) {
-      res.status(400).json({ error: 'Please write a short summary before submitting.' })
+    const readingResult = hydratedQuestion.kind === 'reading-quiz'
+        ? (() => {
+          const rawQuizAnswers = Array.isArray(req.body?.readingQuizAnswers)
+            ? (req.body.readingQuizAnswers as unknown[])
+            : []
+          const selectedOptions = rawQuizAnswers.length > 0
+            ? rawQuizAnswers.map((value: unknown): number => Number(value))
+            : []
+          if (
+            hydratedQuestion.quizItems
+            && selectedOptions.length !== hydratedQuestion.quizItems.length
+          ) {
+            return null
+          }
+          if (selectedOptions.some((value: number) => Number.isNaN(value) || value < 0)) {
+            return null
+          }
+          state.selectedOptions = selectedOptions
+          return evaluateReadingQuiz(session.questions, session.answers, selectedOptions)
+        })()
+      : (() => {
+          const summaryText = answerRaw.trim()
+          if (!summaryText) {
+            return null
+          }
+          state.userTextAnswer = summaryText
+          return evaluateReadingSummary(session.questions, session.answers, summaryText)
+        })()
+    if (!readingResult) {
+      res.status(400).json({
+        error: hydratedQuestion.kind === 'reading-quiz'
+          ? 'Please answer every comprehension question before submitting.'
+          : 'Please write a short summary before submitting.',
+      })
       return
     }
-    const readingResult = evaluateReadingSummary(session.questions, session.answers, summaryText)
-    state.userTextAnswer = summaryText
     state.completed = true
     state.isCorrect = readingResult.overallScore >= 7
     state.elapsedMs = Math.max(0, elapsedMs)
@@ -1055,6 +1309,13 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
       answers: session.answers,
       questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
       totalTokensUsed: session.totalTokensUsed,
+      adaptiveNotification: readingResult.warning
+        ? {
+            kind: 'reading-warning',
+            title: 'Slow Down a Touch',
+            message: readingResult.warning,
+          }
+        : null,
     })
     return
   }
@@ -1065,12 +1326,15 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     return
   }
   const isCorrect = isAnswerCorrect(parsed, hydratedQuestion.answer, hydratedQuestion.tolerance)
+  state.attemptCount = (state.attemptCount ?? 0) + 1
   state.userAnswer = parsed
   state.isCorrect = isCorrect
+  let adaptiveNotification: AdaptiveNotification | null = null
   if (isCorrect) {
     state.completed = true
-    state.selfRating = Math.min(5, Math.max(1, selfRating))
-    state.elapsedMs = Math.max(0, elapsedMs)
+    state.elapsedMs = Math.max(state.elapsedMs ?? 0, Math.max(0, elapsedMs))
+    state.firstAttemptCorrect = (state.attemptCount ?? 1) === 1 && !state.usedHelp && !state.usedReveal
+    adaptiveNotification = maybeAdjustDifficulty(session, state, 'correct-answer')
     if (session.currentIndex < session.questions.length - 1) {
       session.currentIndex += 1
       await ensureQuestionGenerated(session, session.currentIndex)
@@ -1080,6 +1344,11 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     }
   } else {
     state.completed = false
+    state.firstAttemptCorrect = false
+    state.elapsedMs = Math.max(state.elapsedMs ?? 0, Math.max(0, elapsedMs))
+    if ((state.attemptCount ?? 0) === 1) {
+      adaptiveNotification = maybeAdjustDifficulty(session, state, 'wrong-first-attempt')
+    }
   }
   await saveSession(session)
   let explanation: string
@@ -1113,6 +1382,8 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
     totalTokensUsed: session.totalTokensUsed,
+    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
+    adaptiveNotification,
   })
 }))
 

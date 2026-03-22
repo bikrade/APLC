@@ -43,15 +43,54 @@
 - Question variety and appropriate difficulty.
 - Explanation accuracy and supportive tone.
 
-## Reading Comprehension Evaluation
+## Reading Generation And Evaluation
 
-Reading mode uses a rule-based scoring system (no AI call):
+Reading mode now prefers AI-generated, original middle-grade fiction when OpenAI is configured, with a rule-based fallback only if AI generation is unavailable.
 
-- **Story**: "The Monsoon Clock" — 5 pages, ~5,000 words total.
-- **Flow**: 5 reading pages (auto-pass, records read time) + 1 free-text summary question (~100 words).
-- **Comprehension score** (0–10): keyword group coverage across 10 thematic groups (mira, dev, clock, notebook, tower, storm, warning, canal, town, teamwork). Each matched group = +1 point.
-- **Speed score** (0–10): based on average WPM across the 5 reading pages. Target range: 120–140 WPM.
-- **Overall score**: 65% comprehension + 35% speed. Score >= 7 = pass.
+### Reading Story Generation Prompt
+
+System prompt goals:
+
+- Write fresh, original fiction for an 11-13 year old reader.
+- Aim for the atmosphere, narrative momentum, emotional sincerity, and intellectual richness often found in acclaimed middle-grade literature, without imitating any specific copyrighted book, author, series, or character.
+- Return structured JSON with:
+  - `title`
+  - `pages` (5 pages)
+  - `summaryPrompt`
+  - `summaryGuidance`
+  - `keywordGroups`
+  - `quizItems`
+- Keep every story fresh and avoid prior titles from the learner's earlier sessions.
+- Gradually raise depth, inference load, and sentence sophistication when recent reading speed and comprehension show Adi is comfortably above target.
+- The runtime prompt now also uses a quality benchmark list for literary depth and age fit:
+  - `The Hobbit`
+  - `The Golden Compass`
+  - `The Mysterious Benedict Society`
+  - `Artemis Fowl`
+  - `Island of the Blue Dolphins`
+  - `Roll of Thunder, Hear My Cry`
+  - `The Witch of Blackbird Pond`
+  - `Where the Mountain Meets the Moon`
+  - `Bomb: The Race to Build—and Steal—the World's Most Dangerous Weapon`
+  - `I Am Malala`
+- Those titles are used only as a benchmark for quality, depth, readability, courage, atmosphere, and intellectual richness. The prompt explicitly forbids imitation, paraphrase, homage plotting, or reuse of copyrighted characters or signature story structures.
+
+Runtime prompt context includes:
+
+- session seed / session id
+- recent reading-performance summary
+- challenge tier: `core`, `stretch`, or `advanced`
+- list of prior story titles to avoid repeating
+
+### Reading Scoring
+
+- **Flow**: 5 reading pages (auto-pass, records read time) + either 1 free-text summary question or 1 multiple-choice comprehension quiz when reading pace is very high.
+- **Comprehension score** (0–10): based on keyword-group coverage for summaries or quiz correctness for fast-reader quiz mode.
+- **Quiz comprehension score** (0–10): based on 4 story-specific multiple-choice questions.
+- **Speed score** (0–10): below `170 WPM` trends low, reaching `170 WPM` earns full speed credit, and only speeds meaningfully above target are treated as very fast.
+- **Warnings**: very high pace can trigger a caution that the learner may be skimming rather than reading carefully.
+- **Overall score**: weighted comprehension plus pace. Score >= 7 = pass.
+- **WPM source of truth**: reading WPM is calculated on the server from reading-page word counts and reading-page elapsed time only, and the client summary now displays that server-recorded value instead of recomputing its own version.
 
 ## Safety Notes
 

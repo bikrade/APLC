@@ -27,13 +27,13 @@ Phase 1 began as a dev prototype focused on multiplication and has since expande
 
 - **Multiplication**: Decimal, fraction, percentage, and mixed question types with rule-based and AI-generated questions.
 - **Division**: Same question types as Multiplication with division-specific help steps.
-- **Reading**: Story-based reading comprehension ("The Monsoon Clock", 5 pages) with keyword-based comprehension scoring and reading speed (WPM) evaluation.
+- **Reading**: Story-based reading comprehension ("The Monsoon Clock", 5 pages) with pace-aware scoring, free-text summary for normal pace, and quiz-based comprehension checks for very fast reading.
 
 Phase 1 includes:
 
 A simple dev login (pre-filled, no authentication complexity)
 A modern dashboard showing practice stats, progress, and a GitHub-style activity heatmap
-A single active learning path: Multiplication (Division and Reading shown as "Coming Soon")
+A single integrated learning flow across Multiplication, Division, and Reading
 Let him start a session that will include 10-15 questions (similar lesson concept as Duolingo)
 Each session should be designed in a way to finish in 30 min. Add 10-15 questions based on the time goal.
 One-question-at-a-time practice flow, can move backwards to see previous questions, but not forward till current question done
@@ -45,7 +45,7 @@ Tracking time spent per question
 Saving all session data locally in JSON files
 Engaging, Duolingo-style UI with animated feedback, confetti for correct answers, and encouraging animations for incorrect answers
 
-This phase will not include full implementation of division, reading, recommendation engine, or complex analytics dashboards beyond the home screen stats.
+This phase still avoids a full recommendation engine and heavy analytics dashboards, but it now includes live adaptive behavior across multiplication, division, and reading.
 
 ## Functional Requirements
 Adi can enter the app through a simple login screen with a pre-filled name and a login button
@@ -68,12 +68,17 @@ Adi can navigate back to previous questions within the session
 Each session begins with the insights from "what he is doing well" and "where he needs to improve" from his last 3 tests
 If there is no enough past data, say that we need at least 3 test data 
 Use rule-based question generation or introduce AI early, use Azure Open AI using my API key
-Difficulty progression be calculated based on accuracy, time, or self-rating - a combination of all
+Difficulty progression be calculated based on accuracy, first-attempt success, time, hint/reveal usage, and whether the learner needed retries or answer reveal before completing the problem
+Difficulty progression should never swing too quickly. The app should wait for a clear short-run pattern before raising or lowering challenge so Adi feels stretched but not punished, supported but not bored.
+One gradual way to raise challenge in multiplication and division is to keep the same underlying math structure while sometimes presenting it as a short real-world word problem instead of a plain numeric expression. The app should maintain a mix of direct computation and brief situational prompts so Adi practices both calculation fluency and problem interpretation.
+Reading sessions should generate a fresh story for each new session while keeping the passage internally coherent across all pages, the summary guidance, and the comprehension quiz. The goal is to preserve novelty without sacrificing fair comprehension scoring.
 Allow him to pause & resume clock on any problem
 optimal number of questions per session to be decided by the App & AI to allow Adi to finish in 30 min broadly 
 Hints should be dynamically generated, only when help is asked
 Real authentication will be done at the absolute end only the product is ready to go live, keep dummy login till then
 Bring in an element of past performance influence future question in Phase 1 itself
+When difficulty changes, tell Adi clearly and supportively so he understands why the app is adjusting
+For reading, treat `170 WPM` as the target pace, reward reaching that pace on speed score, but warn and verify comprehension when pace climbs meaningfully above it
 
 ## Non-functional Requirements
 The UI should be clean, simple, and child-friendly with minimal distractions
@@ -96,6 +101,14 @@ Adi cannot solve → clicks “Show answer” → sees solution and explanation 
 Session flow:
 Adi completes multiple questions → session data is saved locally → next session continues fresh but can use past data later
 
+Adaptive math flow:
+Adi answers quickly, correctly, and independently across multiple questions → the next questions become a little harder and the UI explains why
+Adi slows down, misses first attempts, or relies on reveals → the next questions become a little easier and the UI explains why
+
+Adaptive reading flow:
+Adi reads in the target band → writes a summary
+Adi reads unusually fast → sees a warning and gets a short multiple-choice comprehension check instead of a summary
+
 ## Celebration & Feedback UX
 - Correct answers trigger multiple varieties of Duolingo-style confetti bursts (classic, shooting stars, school pride, cascade) and an animated overlay.
 - Correct answers display a green feedback banner with a "Continue" button.
@@ -103,6 +116,7 @@ Adi completes multiple questions → session data is saved locally → next sess
 - Wrong answers display a blue/red encouragement banner with the AI-generated explanation and a "Next Question" button.
 - Timer runs live during each question, changes color when time is running out, and pauses with the session.
 - A progress bar and live score are always visible at the top of the session screen.
+- Difficulty changes are surfaced with animated, supportive popups so challenge adjustments never feel random or punitive.
 
 ## Observability
 - **Application Insights** (`aplc-insights`): auto-collects HTTP requests, dependencies, exceptions, and performance metrics.

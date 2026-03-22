@@ -6,13 +6,15 @@
 - Core views: Login, Home (dashboard & insights), Session, Summary.
 - One-question-at-a-time interaction model with back navigation only.
 - Primary UX goal: engaging, Duolingo-style learning flow with immediate animated feedback.
+- Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
+- Reading sessions can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
 
 ## Backend
 
 - Node.js + Express + TypeScript REST API.
 - Session lifecycle endpoints: start, fetch, answer, help, reveal, pause.
 - Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap).
-- Insights endpoint derives performance guidance from the latest 3 sessions.
+- Insights endpoint derives subject-aware performance guidance from completed history across all subjects.
 - Health endpoint for operational checks.
 
 ## Authentication
@@ -65,6 +67,8 @@
 - Duolingo-inspired celebration on correct answers: multiple confetti styles (classic, shooting stars, school pride, cascade) and animated overlay.
 - Feedback banners: green for correct (🎉), blue/red for incorrect (💪), with contextual messaging.
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
+- Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
+- Reading UX: `170 WPM` is the target pace, speeds around that benchmark earn strong speed credit, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
 - CSS animations: slideUp, popIn, celebBounce, fadeInOut, pulse, shake.
 - Modern dashboard with GitHub-style activity heatmap, streak tracking, and stat cards.
 
@@ -80,9 +84,9 @@
 
 ## Subjects
 
-- **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with optional AI override.
-- **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps. Fully distinct from Multiplication.
-- **Reading**: Story-based reading comprehension ("The Monsoon Clock", 5 pages). Evaluates keyword-based comprehension score (65%) and reading speed in WPM (35%). Overall score ≥ 7 to pass.
+- **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-5.
+- **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps and the same adaptive numeric complexity levels.
+- **Reading**: Story-based reading comprehension with fresh session stories, corrected pace scoring, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Overall score ≥ 7 to pass.
 
 ## Security
 
@@ -97,8 +101,8 @@
 
 ## Testing
 
-- **Unit / integration**: Vitest + Supertest (`server/test/api.spec.ts`). Covers auth, rate limiting, session lifecycle, reading flow, answer validation.
-- **E2E**: Playwright + Chromium (`tests/e2e/app.spec.ts`). Covers Multiplication wrong-answer flow, Division session launch, Reading flow completion.
+- **Unit / integration**: Vitest + Supertest (`server/test/api.spec.ts`). Covers auth, rate limiting, adaptive math difficulty, reading summary flow, quiz flow, and answer validation.
+- **E2E**: Playwright + Chromium (`tests/e2e/app.spec.ts`). Covers Multiplication wrong-answer flow, Division session launch, and Reading quiz-mode completion for fast readers.
 - **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`):
   - **CI** (all branches): lint, build, Vitest unit tests, Playwright E2E tests.
   - **CD** (main only): OIDC Azure login → ACR image build → Container App update → health check verification.

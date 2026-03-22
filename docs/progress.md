@@ -14,6 +14,8 @@
 - OpenAI hint integration added with env configuration and API error surfacing.
 - OpenAI question generation: sessions now use AI-generated questions when OpenAI is configured (rule-based fallback preserved).
 - OpenAI explanation generation: personalized per-answer explanations via AI when configured (static fallback preserved).
+- Reading generation upgraded to use AI-written, original middle-grade fiction with fresh titles per session when OpenAI is configured, plus history-based challenge lifting for stronger readers.
+- Reading summary WPM now uses the server-recorded page-reading calculation as the client display source of truth, eliminating misleading client-side recomputation.
 - Added `dotenv` support for `.env`-based credential loading.
 - Added `server/.env.example` template for OpenAI configuration.
 - Switched from Azure OpenAI to OpenAI API directly (OPENAI_API_KEY + OPENAI_MODEL).
@@ -27,7 +29,7 @@
 - Complete UI/UX redesign to a modern, Duolingo-style interface.
 - Added new dashboard endpoint to aggregate historical session data (accuracy, streaks, activity heatmap).
 - Redesigned home screen with stat cards, streak tracking, and subject selection cards.
-- Enhanced session UI with modern question cards, animated timer, and difficulty slider.
+- Enhanced session UI with modern question cards, animated timer, and adaptive difficulty messaging.
 - Upgraded celebration UX: multiple confetti styles (classic, shooting stars, school pride, cascade) and encouraging animations for incorrect answers.
 - Both correct and incorrect answer flows now pause for student acknowledgement ("Continue" or "Next Question" button).
 - Added KaTeX math rendering: LaTeX notation in AI-generated questions, hints, and explanations now renders as beautiful typeset math instead of raw `\( \frac{...}{...} \)` strings.
@@ -84,3 +86,10 @@
   - Frontend unit test layer via Vitest + Testing Library plus Playwright accessibility scan using axe
   - Safer CD with post-deploy smoke checks and automatic Container App revision rollback on failure
   - Backup and restore scripts plus documented recovery runbook in `docs/recovery.md`
+- Adaptive learning upgrade completed:
+  - Math sessions now start from subject-aware historical difficulty and adjust up/down gradually based on first-attempt correctness, pace, hint usage, reveal usage, and completion behavior, with multiple-question evidence required before each level shift
+  - Reading sessions now generate a fresh story pack per session, including matching pages, summary guidance, quiz questions, and comprehension-scoring keywords
+  - Difficulty changes surface as animated, supportive popups in the session UI
+  - Reading speed scoring corrected around a `170 WPM` target, with only meaningfully higher speeds treated as very fast
+  - Very fast reading can switch the final assessment from free-text summary to a multiple-choice comprehension quiz with a warning about skimming risk
+  - Test coverage expanded across server integration, client helper tests, and Playwright reading-quiz E2E flow

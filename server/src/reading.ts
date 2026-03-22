@@ -1,47 +1,410 @@
-import type { Question, QuestionState } from './types'
+import { generateReadingStoryAI, isOpenAIConfigured } from './openai'
+import type { GeneratedReadingStory, Question, QuestionState, ReadingQuizItem, SessionRecord } from './types'
 
-const STORY_TITLE = 'The Monsoon Clock'
+const READING_TARGET_MIN_WPM = 160
+const READING_TARGET_MAX_WPM = 180
+const READING_TARGET_WPM = 170
+const READING_QUIZ_THRESHOLD_WPM = 190
+const READING_WARNING_THRESHOLD_WPM = 220
 
-const STORY_PAGES = [
-  `When the first clouds of June began to gather above Harbor Lane, twelve-year-old Mira spent every afternoon in her grandfather’s repair shop. The shop was narrow, dusty, and full of clocks that breathed in different rhythms. Some ticked politely. Some rattled as if they were gossiping. Others had not moved in years, yet Grandfather Suresh refused to throw them away. “A quiet clock still has a story,” he liked to say. Mira usually smiled and handed him tools, but one evening she noticed a tall brass clock pushed behind a row of lanterns. Its face had no numbers, only painted waves, wind lines, and tiny silver clouds. Near the center, a blue hand pointed toward a mark shaped like a droplet. The wooden case was carved with fish, canal gates, and a ring of mango leaves. It looked too important to be forgotten. When Mira asked about it, Grandfather wiped his hands on a cloth and grew thoughtful. He said the town once called it the Monsoon Clock. Long before phone alerts and weather apps, people in their coastal town used the clock to judge when the canals would swell and when the harbor should be cleared. Then one stormy season, the mechanism jammed, the tower that housed it was closed, and the town slowly stopped trusting it. “It didn’t really predict rain,” Grandfather said. “It helped people notice patterns they were too busy to see.” That sentence stayed with Mira all night. The next morning, while sweeping under the workbench, she found a bundle of notebooks tied with blue string. On the cover of the first notebook was a name she had seen on an old plaque at the town hall: Arun Sen, Surveyor. Inside were pages of sketches showing tide levels, canal maps, and notes about wind direction, pressure changes, and the strange brass clock. A final line, written darker than the rest, made Mira’s pulse jump: If the clock is ever repaired, the town must learn to read together again.`,
-  `Mira carried the notebook to her friend Dev, who lived above his mother’s tea shop near the harbor wall. Dev loved puzzles, maps, and machines, especially if they involved climbing somewhere adults had locked. Together they spread the pages across a table sticky with spilled lime syrup and began reading. Arun Sen’s notes explained that the Monsoon Clock had once stood inside the old watchtower above the canal gate. Every morning, a keeper compared the clock’s moving hands with tide marks, wind flags, and a rain barrel fixed outside the tower window. The clock itself did not create a forecast. Instead, it combined signals gathered by careful observation, turning scattered information into one clear warning the whole town could understand. If the blue hand leaned past the third droplet mark while the copper tide disc rose and the wind vane pointed inland, the keeper would ring the tower bell twice. That meant heavy rain would likely arrive with a high tide, and everyone needed to move baskets, close canal doors, and secure boats. Mira and Dev were fascinated. Their town still flooded every few years, not because people lacked courage, but because warnings arrived late and no one paid attention to the same source. The two friends went to inspect the old tower that afternoon. Its lower door was locked, but a side staircase used by municipal workers had a loose railing and, more importantly, a gap wide enough for determined Grade 6 students. Inside, they found the tower cooler than the street below and smelling of rust, salt, and old paper. At the top sat a circular room with cracked windows and faded tide charts pinned to one wall. In the middle stood an empty pedestal where the clock had once rested. Only a broken bracket and a trail of greenish metal dust remained. Dev discovered that the bracket matched the notch on the brass clock in Grandfather’s shop. Mira found something even more exciting: a missing notebook page trapped under a warped floorboard. It said the clock would fail unless three pieces worked together perfectly: the tide disc, the pressure spring, and the bell lever. Suddenly the task no longer seemed like a mystery from the past. It felt like instructions for something waiting to be finished.`,
-  `For the next week, Mira and Dev built their own after-school routine. They met at the repair shop, studied Arun Sen’s notes, and tested one small part at a time. Grandfather Suresh pretended not to notice how often the brass clock appeared on the main bench, though he kept leaving the correct screwdrivers where Mira could find them. The pressure spring had corroded into a stiff spiral, so Mira soaked it, cleaned it, and compared it with the diagrams in the notebook. Dev repaired the bell lever with a piece of brass borrowed from a broken lantern hinge. The hardest part was the tide disc, a thin circle engraved with markings that linked the canal depth to the moon and the sea wall. At first they thought it had vanished, but Grandfather finally admitted he had hidden it years ago because he was afraid someone would scrap it for metal. He brought it out wrapped in cotton and placed it in Mira’s hands without speaking. The disc was beautiful, etched with tiny arrows and numbers, and heavy for its size. “If you restore it,” he said at last, “restore the habit that belongs with it. A warning tool is useless if people do not trust one another.” That meant fixing the clock would not be enough. Mira and Dev would also need to convince the town to care. They started gathering evidence. Every evening they checked the tide posts, wrote down wind direction, and measured rainfall in an old glass jar. They compared their notes with Arun Sen’s historical records and found the same pattern repeating: when the afternoon wind swung inland and the canal rose earlier than expected, night storms tended to push water toward the lower market. The clock’s strange face began to make sense. The silver cloud marks stood for pressure shifts. The wave ring tracked tide behavior. The blue hand translated several observations into one visible message. By the time the summer fair posters began appearing around town, Mira and Dev had reassembled most of the mechanism. They mounted it temporarily in the tower room and watched the hands move for the first time in decades. The soft click of the restored gears made Mira grin so hard her cheeks hurt. But the bell still misfired, and without the bell, the whole idea of a shared warning would fail at the exact moment the town needed it.`,
-  `Three days before the Lantern Harbor Fair, the weather changed abruptly. The mornings stayed bright, but the air turned thick, and fishing crews returned earlier than usual, complaining that the sea felt restless. Mira checked the rain jar and tide markers twice a day. Dev climbed the tower stairs so often that his mother began sending snacks up with him because she knew he would not come down willingly. The Monsoon Clock was almost ready. Almost. The bell lever stuck one time out of four, and the town council had little patience for experiments led by children. When Mira tried to explain the restored system during a market committee meeting, one shopkeeper said forecasts came from phones now, not from “museum furniture.” Another insisted the old tower only made people nervous. Mira nearly gave up, but Grandfather asked her a question that evening: “Are you trying to prove the clock is magical, or are you trying to help people notice what is already true?” The next day she changed her approach. Instead of asking adults to trust the clock blindly, she invited them to the tower for a demonstration. She showed the notebook pages, the matching tide records, the rain measurements, and the pressure spring that shifted with weather changes. Dev rang the repaired bell by hand and explained what each mark meant. A few fishermen listened carefully. So did Mrs. Anika, who managed the canal gates. She agreed to check the signals with Mira before the fair opened. On the morning of the fair, the sky shone an innocent pale blue, but by noon the wind swung inland. The tide disc rose faster than expected. The blue hand crossed the third droplet mark. Mira’s stomach tightened. She looked at Mrs. Anika, who nodded once, serious now. Together they rang the bell twice. Some people hesitated, but enough of them remembered the demonstration to act. Stall owners lifted boxes onto benches. Harbor crews tied extra lines to their boats. Canal workers closed the first set of gates before sunset. Then the storm arrived harder and earlier than anyone expected. Rain hammered the roofs. Water surged through the outer channels, struck the closed gates, and spilled into the overflow trenches instead of rushing straight into the market square. People still got wet. Lanterns still blew sideways. But the lower market did not flood.`,
-  `By the next morning, Harbor Lane looked exhausted but safe. The storm had left leaves plastered to windows, puddles in every alley, and one fishing net tangled around the statue in the square, yet the shops on the lower road were open, and the canal gates had held. Adults who had laughed at the tower demonstration now climbed the stairs to see the Monsoon Clock for themselves. Mrs. Anika asked Mira and Dev to explain the markings again, slowly this time, so that future gate workers could learn the system. The fishermen offered to record sea conditions each week. Even the market committee, which rarely admitted being wrong, proposed placing a public board below the tower with the daily tide and rain readings. Grandfather Suresh stood near the back of the room while all this happened, pretending to study the bell rope, but Mira caught the small smile he tried to hide. Later, when the tower finally emptied, Mira opened Arun Sen’s notebook to the last page. She added a new line beneath his faded writing: The clock works again because the town reads together again. Dev said it sounded dramatic, but he was smiling too. Over the next month, the watchtower became less like a museum and more like a classroom. School groups visited. Canal workers practiced reading the signals. The town no longer treated the bell as a superstition; it treated it as a reminder to observe carefully and act early. Mira realized that the real lesson of the Monsoon Clock was not about old metal or clever gears. It was about attention, pattern, and trust. A single tool could help, but only if people combined what they saw and shared responsibility for what came next. Whenever new clouds gathered above Harbor Lane, Mira still felt a flicker of nerves. But now, when the blue hand moved and the bell rang, she also felt something steadier: confidence earned from patient reading, careful thinking, and teamwork. The quiet clock in the repair shop had not simply been fixed. Its story had been resumed.`,
+type StoryBlueprint = {
+  place: string
+  titleObject: string
+  mainName: string
+  friendName: string
+  elderName: string
+  elderRole: string
+  helperName: string
+  helperRole: string
+  problem: string
+  dataTool: string
+  fixObject: string
+  warningAction: string
+  lesson: string
+  riskArea: string
+}
+
+type ReadingStory = {
+  title: string
+  pages: string[]
+  summaryPrompt: string
+  summaryGuidance: string
+  keywordGroups: string[][]
+  quizItems: ReadingQuizItem[]
+}
+
+export type ReadingGenerationProfile = {
+  challengeTier: 'core' | 'stretch' | 'advanced'
+  performanceSummary: string
+}
+
+const STORY_BLUEPRINTS: StoryBlueprint[] = [
+  {
+    place: 'Harbor Lane',
+    titleObject: 'Monsoon Clock',
+    mainName: 'Mira',
+    friendName: 'Dev',
+    elderName: 'Suresh',
+    elderRole: 'repairer',
+    helperName: 'Anika',
+    helperRole: 'canal manager',
+    problem: 'late storm warnings',
+    dataTool: 'tide notes and rain marks',
+    fixObject: 'signal clock',
+    warningAction: 'ring the warning bell',
+    lesson: 'people must observe patterns together and act early',
+    riskArea: 'lower market',
+  },
+  {
+    place: 'Riverstone Crossing',
+    titleObject: 'Flood Beacon',
+    mainName: 'Leela',
+    friendName: 'Kabir',
+    elderName: 'Naren',
+    elderRole: 'workshop keeper',
+    helperName: 'Priya',
+    helperRole: 'bridge supervisor',
+    problem: 'rising river surprises',
+    dataTool: 'water logs and wind flags',
+    fixObject: 'beacon dial',
+    warningAction: 'raise the signal flag',
+    lesson: 'careful records become useful only when a community trusts them',
+    riskArea: 'riverside stalls',
+  },
+  {
+    place: 'Cedar Wharf',
+    titleObject: 'Harbor Gauge',
+    mainName: 'Tara',
+    friendName: 'Ishan',
+    elderName: 'Balan',
+    elderRole: 'instrument maker',
+    helperName: 'Meera',
+    helperRole: 'dock captain',
+    problem: 'unsafe harbor preparation',
+    dataTool: 'pressure sketches and tide boards',
+    fixObject: 'gauge wheel',
+    warningAction: 'sound the brass chime',
+    lesson: 'good tools help only when people combine evidence with teamwork',
+    riskArea: 'dock warehouses',
+  },
+  {
+    place: 'Lotus Bay',
+    titleObject: 'Rain Compass',
+    mainName: 'Asha',
+    friendName: 'Rohan',
+    elderName: 'Farid',
+    elderRole: 'clock restorer',
+    helperName: 'Lina',
+    helperRole: 'harbor planner',
+    problem: 'flooded walkways during storms',
+    dataTool: 'rain jar records and canal charts',
+    fixObject: 'compass mechanism',
+    warningAction: 'tap the tower gong',
+    lesson: 'understanding grows when observations are shared clearly',
+    riskArea: 'harbor walkway',
+  },
 ]
 
-const STORY_KEYWORD_GROUPS = [
-  ['mira'],
-  ['dev'],
-  ['clock', 'monsoon clock'],
-  ['notebook', 'notes', 'arun sen'],
-  ['tower', 'watchtower'],
-  ['storm', 'rain', 'monsoon'],
-  ['warning', 'bell', 'signal'],
-  ['canal', 'gates', 'harbor'],
-  ['town', 'market', 'flood'],
-  ['teamwork', 'together', 'trust', 'community'],
+const TITLE_PREFIXES = ['Hidden', 'Restored', 'Old', 'Forgotten', 'Watchful']
+const WEATHER_CUES = ['thick inland wind', 'restless sea air', 'early tide surge', 'sharp pressure drop', 'heavy afternoon humidity']
+const NOTE_OBJECTS = ['field journals', 'weather cards', 'observation charts', 'handwritten survey pages', 'signal notebooks']
+const PREP_ACTIONS = ['lifted supplies', 'secured boats', 'closed gates early', 'cleared walkways', 'moved market crates']
+const TITLE_PATTERNS = [
+  'When {place} Learned to Read the Sky',
+  'The Day {place} Trusted the {object}',
+  'The Warning Above {place}',
+  '{main} and the {prefix} {object}',
+  'The Signal That Saved {place}',
+  '{place} and the Storm Bell',
+  'How {main} Reawakened the {object}',
+  'Before the Water Reached {riskArea}',
 ]
+
+function hashSeed(value: string): number {
+  let hash = 0
+  for (const char of value) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return hash
+}
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
-export function createReadingQuestion(id: string, index: number): Question {
-  if (index < STORY_PAGES.length) {
-    const content = STORY_PAGES[index] ?? ''
+function buildStoryTitle(blueprint: StoryBlueprint, prefix: string, seed: number): string {
+  const pattern = TITLE_PATTERNS[(seed >> 10) % TITLE_PATTERNS.length] ?? TITLE_PATTERNS[0]!
+  return pattern
+    .replace('{place}', blueprint.place)
+    .replace('{object}', blueprint.titleObject)
+    .replace('{main}', blueprint.mainName)
+    .replace('{prefix}', prefix)
+    .replace('{riskArea}', blueprint.riskArea)
+}
+
+function buildFallbackStory(sessionId: string): ReadingStory {
+  const seed = hashSeed(sessionId)
+  const blueprint = STORY_BLUEPRINTS[seed % STORY_BLUEPRINTS.length] ?? STORY_BLUEPRINTS[0]!
+  const titlePrefix = TITLE_PREFIXES[(seed >> 2) % TITLE_PREFIXES.length] ?? TITLE_PREFIXES[0]!
+  const weatherCue = WEATHER_CUES[(seed >> 4) % WEATHER_CUES.length] ?? WEATHER_CUES[0]!
+  const noteObject = NOTE_OBJECTS[(seed >> 6) % NOTE_OBJECTS.length] ?? NOTE_OBJECTS[0]!
+  const prepAction = PREP_ACTIONS[(seed >> 8) % PREP_ACTIONS.length] ?? PREP_ACTIONS[0]!
+  const title = buildStoryTitle(blueprint, titlePrefix, seed)
+  const pages = [
+    `${blueprint.mainName} spent many afternoons in ${blueprint.elderName}'s workshop in ${blueprint.place}, where broken instruments and careful notebooks filled every shelf. One evening, ${blueprint.mainName} discovered an old ${blueprint.fixObject} called the ${title}. ${blueprint.elderName}, the town's ${blueprint.elderRole}, explained that people once used it to respond to ${blueprint.problem}. The device never predicted weather by magic. It helped the town notice patterns through ${blueprint.dataTool}. That idea stayed with ${blueprint.mainName}: a good warning system worked only if people learned how to read it together.`,
+    `The next day ${blueprint.mainName} showed the discovery to ${blueprint.friendName}, who loved diagrams and mechanical puzzles. Together they studied ${noteObject} describing how the ${title} combined weather clues into one signal the whole town could understand. The notes said the tool had once helped protect the ${blueprint.riskArea} when storms arrived quickly. Inside a neglected tower room, the friends found missing instructions about the parts that had to work together and the exact moment the town should ${blueprint.warningAction}. Suddenly the mystery became a practical project.`,
+    `For the next week, ${blueprint.mainName} and ${blueprint.friendName} built a routine of testing small parts, recording daily changes, and comparing fresh observations against the town's older notes. ${blueprint.elderName} quietly guided them without taking over, and the two students slowly understood how the instrument translated scattered details into one clear warning. They realized the real challenge was bigger than repairing metal. If the town did not trust shared evidence, the restored ${title} would fail even if every gear moved perfectly.`,
+    `As storm season approached, the air shifted with ${weatherCue}, and local crews noticed unusual changes. ${blueprint.mainName} and ${blueprint.friendName} presented their findings to ${blueprint.helperName}, the ${blueprint.helperRole}, and to several adults who first doubted the project. Instead of asking for blind trust, they showed records, explained patterns, and demonstrated how the tool worked. When conditions finally matched the warning signs, ${blueprint.helperName} agreed that the town should ${blueprint.warningAction}. Because people had seen the evidence, they acted faster and prepared the ${blueprint.riskArea} before the weather turned dangerous.`,
+    `The storm still arrived with force, but the town was ready. People ${prepAction}, routes were cleared, and the most vulnerable area stayed far safer than usual. The next morning, adults returned to the tower to understand the restored ${title} more carefully. What mattered most was not the old device alone, but the habit it rebuilt. ${blueprint.lesson.charAt(0).toUpperCase()}${blueprint.lesson.slice(1)}. ${blueprint.mainName} realized that the project had not only repaired a forgotten tool. It had taught the town how to notice, think, and respond as one community again.`,
+  ]
+
+  const quizItems: ReadingQuizItem[] = [
+    {
+      id: 'reading-quiz-1',
+      prompt: `Why did people in ${blueprint.place} once rely on the ${title}?`,
+      options: [
+        'It magically controlled the storm clouds above the town',
+        `It helped combine clues from ${blueprint.dataTool} into one shared warning`,
+        'It announced when the market should open each morning',
+        `It measured how many repairs ${blueprint.elderName} could finish in a day`,
+      ],
+      correctOption: 1,
+    },
+    {
+      id: 'reading-quiz-2',
+      prompt: `What did ${blueprint.mainName} and ${blueprint.friendName} learn while restoring the ${title}?`,
+      options: [
+        'That one person can solve emergencies faster without evidence',
+        'That the town should ignore older notebooks and rely only on guessing',
+        'That fixing the device mattered, but trust and shared observation mattered too',
+        `That the ${blueprint.riskArea} never actually had any flood risk`,
+      ],
+      correctOption: 2,
+    },
+    {
+      id: 'reading-quiz-3',
+      prompt: `What changed the adults' minds before the storm?`,
+      options: [
+        `${blueprint.mainName} demanded that everyone obey immediately`,
+        `${blueprint.mainName} and ${blueprint.friendName} showed records, patterns, and a clear explanation`,
+        `${blueprint.helperName} hid the storm forecast until the last minute`,
+        `The ${title} suddenly fixed itself without anyone's help`,
+      ],
+      correctOption: 1,
+    },
+    {
+      id: 'reading-quiz-4',
+      prompt: 'What is the strongest lesson of the story?',
+      options: [
+        'Tools matter most when people use them to compete with one another',
+        'Storm preparation works best when it starts after the danger arrives',
+        blueprint.lesson.charAt(0).toUpperCase() + blueprint.lesson.slice(1),
+        'Old instruments should be displayed, not used, once they are repaired',
+      ],
+      correctOption: 2,
+    },
+  ]
+
+  return {
+    title,
+    pages,
+    summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
+    summaryGuidance: `Focus on ${blueprint.mainName}, the problem with ${blueprint.problem}, how the ${blueprint.titleObject} was restored, and what the town learned from it.`,
+    keywordGroups: [
+      [blueprint.mainName.toLowerCase()],
+      [blueprint.friendName.toLowerCase()],
+      [blueprint.titleObject.toLowerCase(), title.toLowerCase()],
+      [blueprint.place.toLowerCase()],
+      [blueprint.problem.toLowerCase()],
+      [blueprint.dataTool.toLowerCase().split(' and ')[0] ?? blueprint.dataTool.toLowerCase(), 'records', 'notes', 'patterns'],
+      [blueprint.helperName.toLowerCase(), blueprint.helperRole.toLowerCase()],
+      [blueprint.warningAction.toLowerCase(), 'warning', 'signal'],
+      [blueprint.riskArea.toLowerCase(), 'storm', 'flood', 'danger'],
+      ['together', 'community', 'trust', 'shared', 'teamwork'],
+    ],
+    quizItems,
+  }
+}
+
+function createSummaryQuestion(id: string, story: ReadingStory): Question {
+  return {
+    id,
+    prompt: story.summaryPrompt,
+    type: 'reading_summary',
+    kind: 'reading-summary',
+    title: `${story.title} · Final Reflection`,
+    content: story.summaryGuidance,
+    wordCount: 100,
+    quizItems: story.quizItems,
+    readingKeywordGroups: story.keywordGroups,
+    answer: 0,
+    tolerance: 0,
+    helpSteps: [],
+    explanation: '',
+    generated: true,
+  }
+}
+
+function getStoryMetadata(questions: Question[]): { title: string; quizItems: ReadingQuizItem[]; keywordGroups: string[][]; guidance: string } {
+  const baseQuestion = questions.find((question) => question.kind === 'reading-summary' || question.kind === 'reading-quiz')
+  return {
+    title: baseQuestion?.title?.split(' · ')[0] ?? 'Reading Story',
+    quizItems: baseQuestion?.quizItems ?? [],
+    keywordGroups: baseQuestion?.readingKeywordGroups ?? [],
+    guidance: baseQuestion?.content ?? 'Focus on the main character, the problem, how it was solved, and what changed because of it.',
+  }
+}
+
+export function createReadingQuestionSet(sessionId: string): Question[] {
+  const story = buildFallbackStory(sessionId)
+  const pages = story.pages.map((content, index) => ({
+    id: `q-${index + 1}`,
+    prompt: `Read page ${index + 1} of ${story.pages.length}`,
+    type: 'reading_page' as const,
+    kind: 'reading-page' as const,
+    title: story.title,
+    content,
+    wordCount: countWords(content),
+    answer: 0,
+    tolerance: 0,
+    helpSteps: [],
+    explanation: 'Page completed.',
+    generated: true,
+  }))
+  return [...pages, createSummaryQuestion(`q-${story.pages.length + 1}`, story)]
+}
+
+function extractReadingSessionSignal(session: SessionRecord): { readingScore: number; comprehensionScore: number; readingWpm: number } | null {
+  const assessedAnswer = session.answers.find((answer) => answer.completed && typeof answer.readingScore === 'number')
+  if (!assessedAnswer || typeof assessedAnswer.readingWpm !== 'number') return null
+  return {
+    readingScore: assessedAnswer.readingScore ?? 0,
+    comprehensionScore: assessedAnswer.comprehensionScore ?? 0,
+    readingWpm: assessedAnswer.readingWpm,
+  }
+}
+
+export function buildReadingGenerationProfile(allSessions: SessionRecord[]): ReadingGenerationProfile {
+  const recentSignals = allSessions
+    .filter((session) => session.subject === 'Reading' && session.status === 'completed')
+    .sort((a, b) => new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime())
+    .map(extractReadingSessionSignal)
+    .filter((signal): signal is { readingScore: number; comprehensionScore: number; readingWpm: number } => signal !== null)
+    .slice(0, 4)
+
+  if (recentSignals.length === 0) {
+    return {
+      challengeTier: 'core',
+      performanceSummary: 'Adi is reading at an upper-elementary / early middle-grade level. Keep the story vivid, emotionally clear, and highly engaging, with enough challenge to grow inference and vocabulary without overwhelming him.',
+    }
+  }
+
+  const avgWpm = recentSignals.reduce((sum, signal) => sum + signal.readingWpm, 0) / recentSignals.length
+  const avgReadingScore = recentSignals.reduce((sum, signal) => sum + signal.readingScore, 0) / recentSignals.length
+  const avgComprehension = recentSignals.reduce((sum, signal) => sum + signal.comprehensionScore, 0) / recentSignals.length
+
+  if (avgWpm >= 185 && avgReadingScore >= 8.5 && avgComprehension >= 8.5) {
+    return {
+      challengeTier: 'advanced',
+      performanceSummary: `Adi has recently been reading very quickly (${Math.round(avgWpm)} WPM) while still showing strong understanding (${avgComprehension.toFixed(1)}/10 comprehension, ${avgReadingScore.toFixed(1)}/10 overall). Increase the depth, nuance, inference load, and sentence sophistication gradually so the passage still feels rewarding but requires closer reading.`,
+    }
+  }
+
+  if (avgWpm >= 165 && avgReadingScore >= 7.5 && avgComprehension >= 7.5) {
+    return {
+      challengeTier: 'stretch',
+      performanceSummary: `Adi is handling current reading material confidently (${Math.round(avgWpm)} WPM, ${avgComprehension.toFixed(1)}/10 comprehension). Raise the challenge slightly with richer description, subtler motives, and a bit more inferential thinking, while keeping the story highly readable and engaging.`,
+    }
+  }
+
+  return {
+    challengeTier: 'core',
+    performanceSummary: `Adi benefits from strong middle-grade readability with clear emotional stakes and concrete plot movement. Keep the language polished and literary, but make the key events and relationships easy to follow so comprehension stays supported.`,
+  }
+}
+
+function getPriorReadingTitles(allSessions: SessionRecord[]): string[] {
+  return allSessions
+    .filter((session) => session.subject === 'Reading')
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .map((session) => session.questions.find((question) => question.kind === 'reading-page')?.title?.trim())
+    .filter((title): title is string => Boolean(title))
+    .filter((title, index, titles) => titles.indexOf(title) === index)
+    .slice(0, 8)
+}
+
+function toQuestionSet(story: GeneratedReadingStory): Question[] {
+  const pages = story.pages.map((content, index) => ({
+    id: `q-${index + 1}`,
+    prompt: `Read page ${index + 1} of ${story.pages.length}`,
+    type: 'reading_page' as const,
+    kind: 'reading-page' as const,
+    title: story.title,
+    content,
+    wordCount: countWords(content),
+    answer: 0,
+    tolerance: 0,
+    helpSteps: [],
+    explanation: 'Page completed.',
+    generated: true,
+  }))
+
+  return [...pages, createSummaryQuestion(`q-${story.pages.length + 1}`, story)]
+}
+
+export async function createReadingQuestionSetAsync(
+  sessionId: string,
+  options?: {
+    challengeTier?: 'core' | 'stretch' | 'advanced'
+    performanceSummary?: string
+    priorTitles?: string[]
+  },
+): Promise<Question[]> {
+  if (isOpenAIConfigured()) {
+    try {
+      const story = await generateReadingStoryAI({
+        sessionId,
+        challengeTier: options?.challengeTier ?? 'core',
+        performanceSummary: options?.performanceSummary ?? 'Write an engaging original middle-grade story with strong clarity and emotional depth.',
+        priorTitles: options?.priorTitles ?? [],
+      })
+      return toQuestionSet(story)
+    } catch (error) {
+      console.warn('OpenAI reading story generation failed, using fallback generator:', error)
+    }
+  }
+
+  return createReadingQuestionSet(sessionId)
+}
+
+export function getReadingGenerationInputs(allSessions: SessionRecord[]): ReadingGenerationProfile & { priorTitles: string[] } {
+  const profile = buildReadingGenerationProfile(allSessions)
+  return {
+    ...profile,
+    priorTitles: getPriorReadingTitles(allSessions),
+  }
+}
+
+export function createReadingAssessmentQuestion(id: string, questions: Question[], answers: QuestionState[]): Question {
+  const averageWpm = computeReadingWpm(questions, answers)
+  const metadata = getStoryMetadata(questions)
+  if (averageWpm >= READING_QUIZ_THRESHOLD_WPM) {
+    const warning = averageWpm >= READING_WARNING_THRESHOLD_WPM
+      ? `You moved through the text at ${averageWpm} WPM, which is very fast for this passage. Let’s slow down and prove the meaning stayed with you.`
+      : `You read at ${averageWpm} WPM, so we’ll switch to a quick comprehension quiz instead of a written summary.`
     return {
       id,
-      prompt: `Read page ${index + 1} of ${STORY_PAGES.length}`,
-      type: 'reading_page',
-      kind: 'reading-page',
-      title: STORY_TITLE,
-      content,
-      wordCount: countWords(content),
+      prompt: 'Answer the quick comprehension check from the story you just read.',
+      type: 'reading_quiz',
+      kind: 'reading-quiz',
+      title: `${metadata.title} · Comprehension Check`,
+      content: warning,
+      quizItems: metadata.quizItems,
+      readingKeywordGroups: metadata.keywordGroups,
       answer: 0,
       tolerance: 0,
       helpSteps: [],
-      explanation: 'Page completed.',
+      explanation: '',
       generated: true,
     }
   }
@@ -51,10 +414,11 @@ export function createReadingQuestion(id: string, index: number): Question {
     prompt: 'In about 100 words, explain the core summary of the story you just read.',
     type: 'reading_summary',
     kind: 'reading-summary',
-    title: `${STORY_TITLE} · Final Reflection`,
-    content:
-      'Focus on the main character, the problem in the town, how the Monsoon Clock was restored, and what changed because of it.',
+    title: `${metadata.title} · Final Reflection`,
+    content: metadata.guidance,
     wordCount: 100,
+    quizItems: metadata.quizItems,
+    readingKeywordGroups: metadata.keywordGroups,
     answer: 0,
     tolerance: 0,
     helpSteps: [],
@@ -64,37 +428,36 @@ export function createReadingQuestion(id: string, index: number): Question {
 }
 
 export function getReadingQuestionCount(): number {
-  return STORY_PAGES.length + 1
+  return 6
 }
 
-function computeReadingWpm(questions: Question[], answers: QuestionState[]): number {
+export function computeReadingWpm(questions: Question[], answers: QuestionState[]): number {
   const readingPages = questions.filter((question) => question.kind === 'reading-page')
   const totalWords = readingPages.reduce((sum, question) => sum + (question.wordCount ?? 0), 0)
   const totalReadingMs = answers
     .filter((answer, index) => questions[index]?.kind === 'reading-page' && answer.completed)
     .reduce((sum, answer) => sum + answer.elapsedMs, 0)
 
-  if (totalWords === 0 || totalReadingMs < 60_000) {
-    return 0
-  }
-
+  if (totalWords === 0 || totalReadingMs <= 0) return 0
   return Math.min(250, Math.round(totalWords / (totalReadingMs / 60000)))
 }
 
 function computeSpeedScore(wpm: number): number {
-  if (wpm >= 120 && wpm <= 140) return 10
-  if (wpm >= 105 && wpm <= 155) return 8
-  if (wpm >= 90 && wpm <= 170) return 6
-  if (wpm >= 75 && wpm <= 185) return 4
-  if (wpm > 0) return 2
+  if (wpm >= 170) return 10
+  if (wpm >= 160) return 9
+  if (wpm >= 150) return 8
+  if (wpm >= 140) return 7
+  if (wpm >= 130) return 5
+  if (wpm >= 115) return 3
+  if (wpm > 0) return 1
   return 0
 }
 
-function computeComprehensionScore(summaryText: string): number {
+function computeSummaryComprehensionScore(summaryText: string, keywordGroups: string[][]): number {
   const normalized = summaryText.toLowerCase()
   const wordCount = countWords(summaryText)
-  const coveredGroups = STORY_KEYWORD_GROUPS.filter((group) =>
-    group.some((keyword) => normalized.includes(keyword)),
+  const coveredGroups = keywordGroups.filter((group) =>
+    group.some((keyword) => normalized.includes(keyword.toLowerCase())),
   ).length
 
   let score = 0
@@ -111,43 +474,124 @@ function computeComprehensionScore(summaryText: string): number {
   return score
 }
 
+function computeQuizComprehensionScore(selectedOptions: number[], quizItems: ReadingQuizItem[]): { score: number; correctCount: number; totalCount: number } {
+  const totalCount = quizItems.length
+  const correctCount = quizItems.reduce((sum, item, index) =>
+    sum + (selectedOptions[index] === item.correctOption ? 1 : 0), 0)
+  const scoreScale = [0, 4, 6, 8, 10]
+  return {
+    score: scoreScale[correctCount] ?? 0,
+    correctCount,
+    totalCount,
+  }
+}
+
+function buildSpeedMessage(averageWpm: number): string {
+  if (averageWpm >= READING_WARNING_THRESHOLD_WPM) {
+    return `Your reading pace was ${averageWpm} WPM. That is very fast for this text, so slow down a little and make sure you are truly absorbing the meaning.`
+  }
+  if (averageWpm > READING_TARGET_MAX_WPM) {
+    return `Your reading pace was ${averageWpm} WPM, which is strong and above the target pace of ${READING_TARGET_WPM} WPM.`
+  }
+  if (averageWpm >= READING_TARGET_MIN_WPM && averageWpm <= READING_TARGET_MAX_WPM) {
+    return `Your reading pace was ${averageWpm} WPM, right around the target pace of ${READING_TARGET_WPM} WPM.`
+  }
+  if (averageWpm > 0) {
+    return `Your reading pace was ${averageWpm} WPM, below the target pace of ${READING_TARGET_WPM} WPM.`
+  }
+  return 'We could not calculate a reading speed yet.'
+}
+
+export function getReadingAssessmentMode(questions: Question[], answers: QuestionState[]): 'summary' | 'quiz' {
+  return computeReadingWpm(questions, answers) >= READING_QUIZ_THRESHOLD_WPM ? 'quiz' : 'summary'
+}
+
 export function evaluateReadingSummary(
   questions: Question[],
   answers: QuestionState[],
   summaryText: string,
 ): {
+  mode: 'summary'
   comprehensionScore: number
   speedScore: number
   overallScore: number
   averageWpm: number
   explanation: string
+  warning: string | null
 } {
   const averageWpm = computeReadingWpm(questions, answers)
-  const comprehensionScore = computeComprehensionScore(summaryText)
+  const metadata = getStoryMetadata(questions)
+  const comprehensionScore = computeSummaryComprehensionScore(summaryText, metadata.keywordGroups)
   const speedScore = computeSpeedScore(averageWpm)
-  const overallScore = Math.max(0, Math.min(10, Math.round((comprehensionScore * 0.65) + (speedScore * 0.35))))
-
-  const speedMessage =
-    averageWpm >= 120 && averageWpm <= 140
-      ? `Your reading pace was ${averageWpm} WPM, which is right in the target range of 120-140 WPM.`
-      : averageWpm > 0 && averageWpm < 120
-        ? `Your reading pace was ${averageWpm} WPM, a bit below the target range of 120-140 WPM.`
-        : averageWpm > 140
-          ? `Your reading pace was ${averageWpm} WPM, faster than the target range of 120-140 WPM.`
-          : 'We could not calculate a reading speed yet.'
+  const overallScore = Math.max(0, Math.min(10, Math.round((comprehensionScore * 0.7) + (speedScore * 0.3))))
+  const speedMessage = buildSpeedMessage(averageWpm)
+  const warning = averageWpm >= READING_WARNING_THRESHOLD_WPM
+    ? 'You are reading extremely quickly. Make sure speed is not replacing careful understanding.'
+    : null
 
   const comprehensionMessage =
     comprehensionScore >= 8
-      ? 'Your summary captured the core plot, the repaired clock, and the town’s response very well.'
+      ? 'Your summary captured the core characters, the main problem, and the community response very well.'
       : comprehensionScore >= 6
         ? 'Your summary captured some important ideas, but it missed a few key story details.'
         : 'Your summary needs more of the main events, characters, and outcome from the story.'
 
   return {
+    mode: 'summary',
     comprehensionScore,
     speedScore,
     overallScore,
     averageWpm,
+    warning,
     explanation: `${comprehensionMessage} ${speedMessage} Overall reading score: ${overallScore}/10.`,
   }
+}
+
+export function evaluateReadingQuiz(
+  questions: Question[],
+  answers: QuestionState[],
+  selectedOptions: number[],
+): {
+  mode: 'quiz'
+  comprehensionScore: number
+  speedScore: number
+  overallScore: number
+  averageWpm: number
+  explanation: string
+  warning: string | null
+} {
+  const averageWpm = computeReadingWpm(questions, answers)
+  const metadata = getStoryMetadata(questions)
+  const speedScore = computeSpeedScore(averageWpm)
+  const quizResult = computeQuizComprehensionScore(selectedOptions, metadata.quizItems)
+  const overallScore = Math.max(0, Math.min(10, Math.round((quizResult.score * 0.75) + (speedScore * 0.25))))
+  const speedMessage = buildSpeedMessage(averageWpm)
+  const warning = averageWpm >= READING_WARNING_THRESHOLD_WPM
+    ? 'You are reading extremely quickly. Make sure you are slowing down enough to understand what the passage is saying.'
+    : null
+
+  const comprehensionMessage =
+    quizResult.correctCount === quizResult.totalCount
+      ? 'You answered every comprehension check correctly, which shows the meaning stayed with you.'
+      : quizResult.correctCount >= Math.max(3, quizResult.totalCount - 1)
+        ? 'You understood most of the key ideas from the passage.'
+        : 'The quiz shows that some important story details were missed, so slower and more careful reading would help.'
+
+  return {
+    mode: 'quiz',
+    comprehensionScore: quizResult.score,
+    speedScore,
+    overallScore,
+    averageWpm,
+    warning,
+    explanation: `${comprehensionMessage} ${speedMessage} You got ${quizResult.correctCount}/${quizResult.totalCount} quiz questions correct. Overall reading score: ${overallScore}/10.`,
+  }
+}
+
+export {
+  READING_TARGET_MIN_WPM,
+  READING_TARGET_MAX_WPM,
+  READING_TARGET_WPM,
+  READING_QUIZ_THRESHOLD_WPM,
+  READING_WARNING_THRESHOLD_WPM,
 }

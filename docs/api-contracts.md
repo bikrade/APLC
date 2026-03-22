@@ -34,13 +34,14 @@
   - `subject?: string ('Multiplication' | 'Division' | 'Reading', default 'Multiplication')`
 - `POST /session/:userId/:sessionId/answer`
   - `questionIndex: number`
-  - `answer: string | number` (number or fraction string for math; text summary for reading)
+  - `answer: string | number` (number or fraction string for math; text summary for reading summary mode)
+  - `readingQuizAnswers?: number[]` (required when the final reading assessment is in quiz mode)
   - `elapsedMs: number`
-  - `selfRating: number (1-5)`
 - `POST /session/:userId/:sessionId/help`
   - `questionIndex: number`
 - `POST /session/:userId/:sessionId/reveal`
   - `questionIndex: number`
+  - `elapsedMs?: number`
 - `POST /session/:userId/:sessionId/pause`
   - `questionIndex: number`
   - `elapsedMs: number`
@@ -56,12 +57,13 @@
 - `GET /dashboard/:userId` -> `{ totalSessions, overallAccuracy, avgTimePerQuestion, currentStreak, activityDays[], progressInsights? }`
   - `progressInsights`: `{ trend: 'improving'|'declining'|'steady'|'new', trendLabel, recentAccuracy, bestAccuracy, totalQuestionsAnswered, message }` (only present when ≥1 completed session exists)
 - `GET /sessions/in-progress/:userId` -> `{ sessions: [{ sessionId, startedAt, questionsAnswered, totalQuestions, accuracy, subject }] }`
-- `GET /insights/:userId` -> `{ hasEnoughData, message, strengths[], improvements[] }`
-- `POST /session/start` -> `{ sessionId, subject, questionCount, questions[], answers[], currentIndex, totalTokensUsed }`
-- `GET /session/:userId/:sessionId` -> `{ sessionId, subject, status, currentIndex, questions[], answers[], totalTokensUsed }`
-- `POST /answer` -> `{ isCorrect, explanation, currentIndex, status, answers[], questions[], totalTokensUsed }`
+- `GET /insights/:userId` -> `{ hasEnoughData, message, strengths[], improvements[], recommendedFocus[], bySubject[], overall }`
+  - `overall`: `{ completedSessions, totalQuestionsAnswered, strongestSubject, needsAttentionSubject, subjectSessionBreakdown }`
+- `POST /session/start` -> `{ sessionId, subject, questionCount, questions[], answers[], currentIndex, totalTokensUsed, difficultyLevel }`
+- `GET /session/:userId/:sessionId` -> `{ sessionId, subject, status, currentIndex, questions[], answers[], totalTokensUsed, difficultyLevel }`
+- `POST /answer` -> `{ isCorrect, explanation, currentIndex, status, answers[], questions[], totalTokensUsed, difficultyLevel?, adaptiveNotification? }`
 - `POST /help` -> `{ helpSteps[], helpSource, totalTokensUsed }`
-- `POST /reveal` -> `{ correctAnswer, explanation, currentIndex, answers[], questions[] }`
+- `POST /reveal` -> `{ correctAnswer, explanation, currentIndex, answers[], questions[], difficultyLevel?, adaptiveNotification? }`
 - `POST /pause` -> `{ ok, answers[] }`
 
 ## Error Models

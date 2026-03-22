@@ -10,6 +10,7 @@ describe('sessionUi helpers', () => {
   it('maps question badges', () => {
     expect(getQuestionTypeBadge('decimal')).toContain('Decimal')
     expect(getQuestionTypeBadge('reading_summary')).toContain('Summary')
+    expect(getQuestionTypeBadge('reading_quiz')).toContain('Quiz')
     expect(getQuestionTypeBadge('custom')).toBe('custom')
   })
 

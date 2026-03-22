@@ -6,11 +6,11 @@ An adaptive, personalized learning web app for Grade 6 math and reading practice
 
 ## Features
 
-- **Multiplication** — decimal, fraction, percentage, and mixed question types
-- **Division** — same question types with division-specific help steps
-- **Reading** — story-based reading comprehension with WPM and keyword scoring
+- **Multiplication** — decimal, fraction, percentage, and mixed question types with adaptive level shifting
+- **Division** — same question types with division-specific help steps and adaptive level shifting
+- **Reading** — fresh AI-written middle-grade stories, corrected server-verified WPM scoring, fast-reader quiz mode, and comprehension warnings
 - **AI-powered** — OpenAI (gpt-4o-mini) generates questions, hints, and per-answer explanations
-- **Adaptive difficulty** — adjusts based on accuracy, time, and self-rating
+- **Adaptive difficulty** — uses historical subject performance plus live first-attempt behavior, pace, and support usage
 - **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, progress insights
 - **Google OAuth 2.0** — HMAC-SHA256 session tokens, single allowed email
 - **Duolingo-style UX** — confetti celebrations, animated feedback, KaTeX math rendering
@@ -116,8 +116,8 @@ See [docs/deployment.md](docs/deployment.md) for full details.
 # Server unit/integration tests
 cd server && npm test
 
-# E2E tests (requires built app)
-npm run build && npx playwright test
+# E2E tests
+npm run test:e2e
 
 # Lint
 npm run lint
