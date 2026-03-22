@@ -1886,17 +1886,6 @@ function App() {
                         </div>
                       </div>
                     )}
-                    {lastCompletedSession && (
-                      <button
-                        type="button"
-                        className="subject-score-link"
-                        onClick={() => openLastScorePage(subject.id)}
-                        disabled={isBusy}
-                      >
-                        <span>Last score page</span>
-                        <span>{formatRelativeTime(lastCompletedSession.completedAt)}</span>
-                      </button>
-                    )}
                     <button
                       className={`btn-start-subject ${isBlockingHomeLaunch && !isLaunchingThisSubject ? 'quiet-disabled' : ''}`}
                       onClick={() => requestStartSession(subject.id)}
@@ -1917,6 +1906,17 @@ function App() {
                         ? `Continue ${getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} →`
                         : `Start ${getSessionModeMeta(displayedSessionMode).shortLabel} →`}
                     </button>
+                    {lastCompletedSession && (
+                      <button
+                        type="button"
+                        className="subject-score-link"
+                        onClick={() => openLastScorePage(subject.id)}
+                        disabled={isBusy}
+                      >
+                        <span>Last score page</span>
+                        <span>{formatRelativeTime(lastCompletedSession.completedAt)}</span>
+                      </button>
+                    )}
                   </div>
                 )
               })}
