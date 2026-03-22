@@ -287,4 +287,168 @@ describe('APLC backend', () => {
     expect(res.body.totalSessions).toBe(4)
     expect(res.body.overallAccuracy).toBe(100)
   })
+
+  test('insights returns enriched overall and per-subject guidance', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const makeMathSession = (
+      id: string,
+      startedAt: string,
+      subject: 'Multiplication' | 'Division',
+      answers: Array<{ correct: boolean; elapsedMs: number; usedReveal?: boolean; type: 'decimal' | 'fraction' | 'percentage' | 'mixed' }>,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject,
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: answers.length,
+      questions: answers.map((answer, index) => ({
+        id: `${id}-q-${index}`,
+        prompt: `Question ${index + 1}`,
+        type: answer.type,
+        kind: 'math',
+        answer: 1,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      })),
+      answers: answers.map((answer, index) => ({
+        questionId: `${id}-q-${index}`,
+        questionIndex: index,
+        completed: true,
+        usedHelp: false,
+        usedReveal: answer.usedReveal ?? false,
+        elapsedMs: answer.elapsedMs,
+        isCorrect: answer.correct,
+      })),
+      totalTokensUsed: 0,
+    })
+
+    const makeReadingSession = (
+      id: string,
+      startedAt: string,
+      readingScore: number,
+      comprehensionScore: number,
+      readingWpm: number,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Reading',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 2,
+      questions: [
+        {
+          id: `${id}-page`,
+          prompt: 'Read the passage.',
+          type: 'reading_page',
+          kind: 'reading-page',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+        {
+          id: `${id}-summary`,
+          prompt: 'Summarize the passage.',
+          type: 'reading_summary',
+          kind: 'reading-summary',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+      ],
+      answers: [
+        {
+          questionId: `${id}-page`,
+          questionIndex: 0,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 60000,
+          isCorrect: true,
+        },
+        {
+          questionId: `${id}-summary`,
+          questionIndex: 1,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 45000,
+          isCorrect: true,
+          readingScore,
+          comprehensionScore,
+          speedScore: 8,
+          readingWpm,
+        },
+      ],
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260318-090000-Multiplication',
+      '2026-03-18T09:00:00.000Z',
+      'Multiplication',
+      [
+        { correct: true, elapsedMs: 85000, type: 'decimal' },
+        { correct: true, elapsedMs: 95000, type: 'decimal' },
+        { correct: false, elapsedMs: 170000, usedReveal: true, type: 'fraction' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260319-090000-Division',
+      '2026-03-19T09:00:00.000Z',
+      'Division',
+      [
+        { correct: true, elapsedMs: 75000, type: 'fraction' },
+        { correct: true, elapsedMs: 80000, type: 'fraction' },
+        { correct: true, elapsedMs: 82000, type: 'percentage' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeReadingSession(
+      '20260320-090000-Reading',
+      '2026-03-20T09:00:00.000Z',
+      8.5,
+      8,
+      128,
+    ))
+
+    const res = await request(ctx.app).get('/insights/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.hasEnoughData).toBe(true)
+    expect(res.body.overall.completedSessions).toBe(3)
+    expect(res.body.overall.totalQuestionsAnswered).toBe(8)
+    expect(res.body.overall.strongestSubject).toBe('Division')
+    expect(res.body.overall.needsAttentionSubject).toBe('Multiplication')
+    expect(res.body.recommendedFocus).toHaveLength(3)
+    expect(res.body.recommendedFocus).toContainEqual(expect.stringContaining('Multiplication:'))
+    expect(res.body.bySubject).toHaveLength(3)
+
+    const multiplication = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Multiplication')
+    expect(multiplication).toBeTruthy()
+    expect(multiplication.trend).toBe('needs-attention')
+    expect(multiplication.metrics.accuracy).toBe(67)
+    expect(multiplication.metrics.revealRate).toBe(33)
+    expect(multiplication.focusAreas).toContainEqual(expect.stringContaining('accuracy is 67%'))
+
+    const division = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Division')
+    expect(division).toBeTruthy()
+    expect(division.metrics.accuracy).toBe(100)
+    expect(division.strengths).toContainEqual(expect.stringContaining('Division accuracy is strong'))
+
+    const reading = res.body.bySubject.find((item: { subject: string }) => item.subject === 'Reading')
+    expect(reading).toBeTruthy()
+    expect(reading.metrics.averageWpm).toBe(128)
+    expect(reading.metrics.comprehensionScore).toBe(8)
+    expect(reading.metrics.readingScore).toBe(8.5)
+  })
 })

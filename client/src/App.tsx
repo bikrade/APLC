@@ -36,6 +36,32 @@ type InsightResponse = {
   message: string
   strengths: string[]
   improvements: string[]
+  recommendedFocus: string[]
+  bySubject: SubjectInsight[]
+  overall: {
+    completedSessions: number
+    totalQuestionsAnswered: number
+    strongestSubject: Subject | null
+    needsAttentionSubject: Subject | null
+  }
+}
+
+type SubjectInsight = {
+  subject: Subject
+  trend: 'improving' | 'steady' | 'building' | 'needs-attention'
+  sessionsCompleted: number
+  headline: string
+  strengths: string[]
+  focusAreas: string[]
+  recommendedNextStep: string
+  metrics: {
+    accuracy: number | null
+    avgSeconds: number | null
+    revealRate: number | null
+    averageWpm: number | null
+    comprehensionScore: number | null
+    readingScore: number | null
+  }
 }
 
 type DashboardStats = {
@@ -212,12 +238,33 @@ function formatRelativeTime(isoDate: string): string {
   return `${diffDays}d ago`
 }
 
+function getSubjectTrendLabel(trend: SubjectInsight['trend']): string {
+  switch (trend) {
+    case 'improving':
+      return 'Improving'
+    case 'needs-attention':
+      return 'Needs Focus'
+    case 'steady':
+      return 'Steady'
+    default:
+      return 'Building'
+  }
+}
+
 function defaultInsightsMessage(): InsightResponse {
   return {
     hasEnoughData: false,
     message: 'Welcome back. Your latest progress is loading.',
     strengths: [],
     improvements: [],
+    recommendedFocus: [],
+    bySubject: [],
+    overall: {
+      completedSessions: 0,
+      totalQuestionsAnswered: 0,
+      strongestSubject: null,
+      needsAttentionSubject: null,
+    },
   }
 }
 
@@ -1270,9 +1317,24 @@ function App() {
           </div>
 
           {/* Insights */}
-          {insights?.hasEnoughData && (insights.strengths.length > 0 || insights.improvements.length > 0) && (
+          {insights?.hasEnoughData && (
             <div className="insights-panel">
               <h3 className="panel-title">💡 Your Insights</h3>
+              <p className="insights-summary">{insights.message}</p>
+              <div className="insights-overview">
+                <div className="insights-overview-stat">
+                  <span className="insights-overview-value">{insights.overall.completedSessions}</span>
+                  <span className="insights-overview-label">Completed Sessions</span>
+                </div>
+                <div className="insights-overview-stat">
+                  <span className="insights-overview-value">{insights.overall.totalQuestionsAnswered}</span>
+                  <span className="insights-overview-label">Questions Answered</span>
+                </div>
+                <div className="insights-overview-stat">
+                  <span className="insights-overview-value">{insights.overall.strongestSubject ?? 'Building'}</span>
+                  <span className="insights-overview-label">Strongest Subject</span>
+                </div>
+              </div>
               <div className="insights-grid">
                 <div className="insight-box strengths">
                   <p className="insight-box-title">✅ Going Well</p>
@@ -1295,6 +1357,70 @@ function App() {
                   )}
                 </div>
               </div>
+              {insights.recommendedFocus.length > 0 && (
+                <div className="insight-box recommendations">
+                  <p className="insight-box-title">🎯 Next Best Focus</p>
+                  <ul className="insight-list">
+                    {insights.recommendedFocus.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              )}
+              {insights.bySubject.length > 0 && (
+                <div className="subject-insights-grid">
+                  {insights.bySubject.map((subjectInsight) => (
+                    <div key={subjectInsight.subject} className={`subject-insight-card trend-${subjectInsight.trend}`}>
+                      <div className="subject-insight-header">
+                        <div>
+                          <p className="subject-insight-name">{subjectInsight.subject}</p>
+                          <p className="subject-insight-headline">{subjectInsight.headline}</p>
+                        </div>
+                        <span className="subject-insight-trend">{getSubjectTrendLabel(subjectInsight.trend)}</span>
+                      </div>
+                      <div className="subject-insight-metrics">
+                        {subjectInsight.metrics.accuracy !== null && (
+                          <div className="subject-insight-metric">
+                            <span className="subject-insight-metric-value">{subjectInsight.metrics.accuracy}%</span>
+                            <span className="subject-insight-metric-label">Accuracy</span>
+                          </div>
+                        )}
+                        {subjectInsight.metrics.avgSeconds !== null && (
+                          <div className="subject-insight-metric">
+                            <span className="subject-insight-metric-value">{subjectInsight.metrics.avgSeconds}s</span>
+                            <span className="subject-insight-metric-label">Avg Time</span>
+                          </div>
+                        )}
+                        {subjectInsight.metrics.averageWpm !== null && (
+                          <div className="subject-insight-metric">
+                            <span className="subject-insight-metric-value">{subjectInsight.metrics.averageWpm}</span>
+                            <span className="subject-insight-metric-label">WPM</span>
+                          </div>
+                        )}
+                        {subjectInsight.metrics.comprehensionScore !== null && (
+                          <div className="subject-insight-metric">
+                            <span className="subject-insight-metric-value">{subjectInsight.metrics.comprehensionScore}</span>
+                            <span className="subject-insight-metric-label">Comprehension</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="subject-insight-columns">
+                        <div>
+                          <p className="subject-insight-section-title">Going Well</p>
+                          <ul className="insight-list compact">
+                            {subjectInsight.strengths.map((item) => <li key={item}>{item}</li>)}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="subject-insight-section-title">Focus Next</p>
+                          <ul className="insight-list compact">
+                            {subjectInsight.focusAreas.map((item) => <li key={item}>{item}</li>)}
+                          </ul>
+                        </div>
+                      </div>
+                      <p className="subject-insight-next-step">{subjectInsight.recommendedNextStep}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

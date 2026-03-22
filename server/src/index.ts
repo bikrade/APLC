@@ -14,7 +14,6 @@ import {
   deleteLegacySessionFiles,
   listAllSessions,
   pruneActiveSessionsForSubject,
-  readInsightsText,
   readSession,
   readUserProfile,
   readUserIds,
@@ -172,6 +171,34 @@ type InsightPayload = {
   message: string
   strengths: string[]
   improvements: string[]
+  recommendedFocus: string[]
+  bySubject: SubjectInsight[]
+  overall: {
+    completedSessions: number
+    totalQuestionsAnswered: number
+    strongestSubject: Subject | null
+    needsAttentionSubject: Subject | null
+  }
+}
+
+type InsightTrend = 'improving' | 'steady' | 'building' | 'needs-attention'
+
+type SubjectInsight = {
+  subject: Subject
+  trend: InsightTrend
+  sessionsCompleted: number
+  headline: string
+  strengths: string[]
+  focusAreas: string[]
+  recommendedNextStep: string
+  metrics: {
+    accuracy: number | null
+    avgSeconds: number | null
+    revealRate: number | null
+    averageWpm: number | null
+    comprehensionScore: number | null
+    readingScore: number | null
+  }
 }
 
 type AuthenticatedRequest = Request & {
@@ -235,106 +262,249 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
 }
 
 function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): InsightPayload {
-  const recentCompleted = allSessions
-    .filter((session) => session.status === 'completed')
-    .slice(0, 3)
+  const completedSessions = allSessions.filter((session) => session.status === 'completed')
 
-  if (recentCompleted.length < 3) {
+  if (completedSessions.length < 3) {
     return {
       hasEnoughData: false,
       message: 'We need at least 3 completed sessions to generate insights.',
       strengths: [],
       improvements: [],
+      recommendedFocus: [],
+      bySubject: [],
+      overall: {
+        completedSessions: completedSessions.length,
+        totalQuestionsAnswered: 0,
+        strongestSubject: null,
+        needsAttentionSubject: null,
+      },
     }
   }
 
-  const stats = {
-    total: 0,
-    correct: 0,
+  const subjects: Subject[] = ['Multiplication', 'Division', 'Reading']
+  const overall = {
+    totalQuestionsAnswered: 0,
+    totalCorrect: 0,
     totalTimeMs: 0,
     revealCount: 0,
   }
+  const subjectScores: Array<{ subject: Subject; score: number }> = []
 
-  for (const session of recentCompleted) {
-    for (const answer of session.answers) {
-      if (!answer.completed) continue
-      stats.total += 1
-      if (answer.isCorrect) stats.correct += 1
-      stats.totalTimeMs += answer.elapsedMs
-      if (answer.usedReveal) stats.revealCount += 1
+  const bySubject = subjects.map((subject) => {
+    const subjectSessions = completedSessions.filter((session) => session.subject === subject)
+    const recentSubjectSessions = subjectSessions.slice(0, 3)
+    const olderSubjectSessions = subjectSessions.slice(3)
+
+    let totalAnswered = 0
+    let totalCorrect = 0
+    let totalTimeMs = 0
+    let revealCount = 0
+    let readingScoreTotal = 0
+    let comprehensionTotal = 0
+    let wpmTotal = 0
+    let readingSamples = 0
+    const questionTypeStats = new Map<string, { total: number; correct: number }>()
+
+    for (const session of subjectSessions) {
+      for (const answer of session.answers) {
+        if (!answer.completed) continue
+        totalAnswered += 1
+        overall.totalQuestionsAnswered += 1
+        totalTimeMs += answer.elapsedMs
+        overall.totalTimeMs += answer.elapsedMs
+
+        if (answer.isCorrect) {
+          totalCorrect += 1
+          overall.totalCorrect += 1
+        }
+        if (answer.usedReveal) {
+          revealCount += 1
+          overall.revealCount += 1
+        }
+
+        const question = session.questions[answer.questionIndex]
+        if (question?.type) {
+          const current = questionTypeStats.get(question.type) ?? { total: 0, correct: 0 }
+          current.total += 1
+          if (answer.isCorrect) current.correct += 1
+          questionTypeStats.set(question.type, current)
+        }
+
+        if (subject === 'Reading' && typeof answer.readingScore === 'number') {
+          readingScoreTotal += answer.readingScore
+          comprehensionTotal += answer.comprehensionScore ?? 0
+          wpmTotal += answer.readingWpm ?? 0
+          readingSamples += 1
+        }
+      }
     }
-  }
 
-  const accuracy = stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
-  const avgSeconds = stats.total ? Math.round(stats.totalTimeMs / stats.total / 1000) : 0
+    const accuracy = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : null
+    const avgSeconds = totalAnswered > 0 ? Math.round(totalTimeMs / totalAnswered / 1000) : null
+    const revealRate = totalAnswered > 0 ? Math.round((revealCount / totalAnswered) * 100) : null
+    const averageWpm = readingSamples > 0 ? Math.round(wpmTotal / readingSamples) : null
+    const comprehensionScore = readingSamples > 0 ? Number((comprehensionTotal / readingSamples).toFixed(1)) : null
+    const readingScore = readingSamples > 0 ? Number((readingScoreTotal / readingSamples).toFixed(1)) : null
+
+    const recentAccuracy = (() => {
+      const answers = recentSubjectSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
+      if (answers.length === 0) return null
+      const correct = answers.filter((answer) => answer.isCorrect).length
+      return Math.round((correct / answers.length) * 100)
+    })()
+
+    const olderAccuracy = (() => {
+      const answers = olderSubjectSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
+      if (answers.length === 0) return null
+      const correct = answers.filter((answer) => answer.isCorrect).length
+      return Math.round((correct / answers.length) * 100)
+    })()
+
+    let trend: InsightTrend = 'building'
+    if (subjectSessions.length === 0) trend = 'building'
+    else if (recentAccuracy !== null && olderAccuracy !== null && recentAccuracy >= olderAccuracy + 8) trend = 'improving'
+    else if (accuracy !== null && accuracy < 70) trend = 'needs-attention'
+    else trend = 'steady'
+
+    const weakestType = [...questionTypeStats.entries()]
+      .filter(([, value]) => value.total >= 2)
+      .sort((a, b) => (a[1].correct / a[1].total) - (b[1].correct / b[1].total))[0]
+    const strongestType = [...questionTypeStats.entries()]
+      .filter(([, value]) => value.total >= 2)
+      .sort((a, b) => (b[1].correct / b[1].total) - (a[1].correct / a[1].total))[0]
+
+    const strengths: string[] = []
+    const focusAreas: string[] = []
+    let headline = `We’re just getting started in ${subject.toLowerCase()}.`
+    let recommendedNextStep = `Complete more ${subject.toLowerCase()} sessions so we can tailor support more precisely.`
+
+    if (subjectSessions.length === 0) {
+      focusAreas.push(`Complete your first ${subject.toLowerCase()} session so this area can start giving Adi targeted coaching.`)
+    } else if (subject === 'Reading') {
+      if (readingScore !== null && readingScore >= 8) strengths.push(`Reading quality is strong at ${readingScore}/10 overall.`)
+      if (averageWpm !== null && averageWpm >= 120 && averageWpm <= 140) strengths.push(`Reading pace is on target at ${averageWpm} WPM.`)
+      if (comprehensionScore !== null && comprehensionScore >= 8) strengths.push(`Comprehension is a strength at ${comprehensionScore}/10.`)
+
+      if (averageWpm !== null && averageWpm < 120) focusAreas.push(`Reading pace is ${averageWpm} WPM. Aim for the 120-140 WPM target range.`)
+      if (averageWpm !== null && averageWpm > 140) focusAreas.push(`Reading pace is ${averageWpm} WPM. Slow down slightly to protect comprehension.`)
+      if (comprehensionScore !== null && comprehensionScore < 7) focusAreas.push(`Comprehension is ${comprehensionScore}/10. Focus on main idea and supporting details.`)
+
+      headline = readingScore !== null
+        ? `Reading is ${trend === 'improving' ? 'improving' : 'settling'} at ${readingScore}/10 overall.`
+        : 'Reading has enough data to start building a clearer pattern.'
+      recommendedNextStep = comprehensionScore !== null && comprehensionScore < 7
+        ? 'After each page, pause and say the main idea out loud before writing the summary.'
+        : averageWpm !== null && averageWpm < 120
+          ? 'Do one reading session focused on steady pace instead of speed.'
+          : 'Keep balancing reading pace and comprehension to deepen consistency.'
+    } else {
+      if (accuracy !== null && accuracy >= 85) strengths.push(`${subject} accuracy is strong at ${accuracy}%.`)
+      if (avgSeconds !== null && avgSeconds <= 110) strengths.push(`You are moving through ${subject.toLowerCase()} at a confident pace (${avgSeconds}s average).`)
+      if (revealRate !== null && revealRate <= 10) strengths.push(`Answer reveals are low in ${subject.toLowerCase()}, showing growing independence.`)
+      if (strongestType) {
+        const typeLabel = strongestType[0].replace('_', ' ')
+        const niceTypeLabel = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)
+        strengths.push(`${niceTypeLabel} questions are currently the strongest ${subject.toLowerCase()} pattern.`)
+      }
+
+      if (accuracy !== null && accuracy < 80) focusAreas.push(`${subject} accuracy is ${accuracy}%. Slow down and check each step before submitting.`)
+      if (avgSeconds !== null && avgSeconds > 140) focusAreas.push(`${subject} is taking ${avgSeconds}s per question. Break problems into smaller chunks.`)
+      if (revealRate !== null && revealRate > 20) focusAreas.push(`Reveals are being used ${revealRate}% of the time in ${subject.toLowerCase()}. Use hints first.`)
+      if (weakestType) {
+        const typeLabel = weakestType[0].replace('_', ' ')
+        const niceTypeLabel = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)
+        focusAreas.push(`${niceTypeLabel} questions need the most attention in ${subject.toLowerCase()}.`)
+      }
+
+      headline = accuracy !== null
+        ? `${subject} accuracy is ${accuracy}% across ${subjectSessions.length} completed session${subjectSessions.length === 1 ? '' : 's'}.`
+        : `${subject} needs a few more answered questions before a stable pattern appears.`
+      recommendedNextStep = weakestType
+        ? `Use the next ${subject.toLowerCase()} session to focus on ${weakestType[0].replace('_', ' ')} questions.`
+        : `Keep building consistency in ${subject.toLowerCase()} with another completed session.`
+    }
+
+    if (strengths.length === 0) {
+      strengths.push(`This subject is building a usable baseline that will get sharper with more sessions.`)
+    }
+    if (focusAreas.length === 0) {
+      focusAreas.push(`Keep practicing ${subject.toLowerCase()} regularly to turn this consistency into a stronger advantage.`)
+    }
+
+    if (subjectSessions.length > 0) {
+      const score = (accuracy ?? (readingScore !== null ? Math.round(readingScore * 10) : 0)) - (revealRate ?? 0) / 4
+      subjectScores.push({ subject, score })
+    }
+
+    return {
+      subject,
+      trend,
+      sessionsCompleted: subjectSessions.length,
+      headline,
+      strengths,
+      focusAreas,
+      recommendedNextStep,
+      metrics: {
+        accuracy,
+        avgSeconds,
+        revealRate,
+        averageWpm,
+        comprehensionScore,
+        readingScore,
+      },
+    }
+  })
+
+  const overallAccuracy = overall.totalQuestionsAnswered > 0
+    ? Math.round((overall.totalCorrect / overall.totalQuestionsAnswered) * 100)
+    : 0
+  const overallAvgSeconds = overall.totalQuestionsAnswered > 0
+    ? Math.round(overall.totalTimeMs / overall.totalQuestionsAnswered / 1000)
+    : 0
+  const strongestSubject = [...subjectScores].sort((a, b) => b.score - a.score)[0]?.subject ?? null
+  const needsAttentionSubject = [...subjectScores].sort((a, b) => a.score - b.score)[0]?.subject ?? null
+
   const strengths: string[] = []
   const improvements: string[] = []
+  const recommendedFocus: string[] = []
 
-  if (accuracy >= 70) strengths.push(`Solid accuracy trend (${accuracy}%).`)
-  else improvements.push(`Accuracy is ${accuracy}% right now. Slow down and work through each step carefully.`)
+  if (overallAccuracy >= 85) strengths.push(`Adi is sustaining strong overall accuracy at ${overallAccuracy}% across completed work.`)
+  else if (overallAccuracy >= 70) strengths.push(`Overall accuracy is holding at ${overallAccuracy}% and trending into a stable learning zone.`)
+  else improvements.push(`Overall accuracy is ${overallAccuracy}%. The next step is to prioritize careful thinking over speed.`)
 
-  if (avgSeconds <= 120) strengths.push(`Good pace (${avgSeconds}s per question on average).`)
-  else improvements.push(`Average time is ${avgSeconds}s. Break each question into smaller steps to speed up.`)
+  if (overallAvgSeconds > 0 && overallAvgSeconds <= 120) strengths.push(`Average response time is a healthy ${overallAvgSeconds}s, which keeps sessions moving.`)
+  else if (overallAvgSeconds > 120) improvements.push(`Average response time is ${overallAvgSeconds}s. Breaking questions into smaller steps would help.`)
 
-  if (stats.revealCount <= 2) strengths.push('Low answer reveal usage in recent sessions.')
-  else improvements.push('Answer reveals are high. Try using hints before showing the full answer.')
+  if (strongestSubject) strengths.push(`${strongestSubject} is currently the clearest subject strength.`)
+  if (needsAttentionSubject && needsAttentionSubject !== strongestSubject) improvements.push(`${needsAttentionSubject} is the best candidate for the next focused practice block.`)
+
+  const improvingSubjects = bySubject.filter((subject) => subject.trend === 'improving')
+  if (improvingSubjects.length > 0) {
+    strengths.push(`${improvingSubjects.map((subject) => subject.subject).join(' and ')} ${improvingSubjects.length === 1 ? 'is' : 'are'} improving in recent sessions.`)
+  }
+
+  for (const subject of bySubject) {
+    recommendedFocus.push(`${subject.subject}: ${subject.recommendedNextStep}`)
+  }
 
   return {
     hasEnoughData: true,
-    message: 'Insights generated from the last 3 completed sessions.',
+    message: `Insights are built from ${completedSessions.length} completed sessions, with recent work weighted more heavily than older history.`,
     strengths,
     improvements,
+    recommendedFocus,
+    bySubject,
+    overall: {
+      completedSessions: completedSessions.length,
+      totalQuestionsAnswered: overall.totalQuestionsAnswered,
+      strongestSubject,
+      needsAttentionSubject,
+    },
   }
 }
 
 function formatInsightsText(payload: InsightPayload): string {
-  return [
-    `Message: ${payload.message}`,
-    '',
-    '[Going Well]',
-    ...(payload.strengths.length > 0 ? payload.strengths.map((item) => `- ${item}`) : ['- None yet.']),
-    '',
-    '[Focus Areas]',
-    ...(payload.improvements.length > 0 ? payload.improvements.map((item) => `- ${item}`) : ['- No major focus area right now.']),
-    '',
-  ].join('\n')
-}
-
-function parseInsightsText(content: string): InsightPayload {
-  const lines = content.split('\n').map((line) => line.trim())
-  const strengths: string[] = []
-  const improvements: string[] = []
-  let section: 'strengths' | 'improvements' | null = null
-  let message = 'Insights generated from the last 3 completed sessions.'
-
-  for (const line of lines) {
-    if (!line) continue
-    if (line.startsWith('Message:')) {
-      message = line.slice('Message:'.length).trim() || message
-      continue
-    }
-    if (line === '[Going Well]') {
-      section = 'strengths'
-      continue
-    }
-    if (line === '[Focus Areas]') {
-      section = 'improvements'
-      continue
-    }
-    if (!line.startsWith('- ')) continue
-
-    const item = line.slice(2).trim()
-    if (!item || item === 'None yet.' || item === 'No major focus area right now.') continue
-    if (section === 'strengths') strengths.push(item)
-    if (section === 'improvements') improvements.push(item)
-  }
-
-  return {
-    hasEnoughData: true,
-    message,
-    strengths,
-    improvements,
-  }
+  return JSON.stringify(payload, null, 2)
 }
 
 async function refreshInsightsFile(userId: string): Promise<InsightPayload> {
@@ -570,19 +740,6 @@ app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
 
 app.get('/insights/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
-  const allSessions = await listAllSessions(userId)
-  const computed = buildInsightsPayloadFromSessions(allSessions)
-  if (!computed.hasEnoughData) {
-    res.json(computed)
-    return
-  }
-
-  const storedInsights = await readInsightsText(userId)
-  if (storedInsights) {
-    res.json(parseInsightsText(storedInsights))
-    return
-  }
-
   const refreshed = await refreshInsightsFile(userId)
   res.json(refreshed)
 }))
