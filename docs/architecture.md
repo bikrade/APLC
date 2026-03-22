@@ -74,7 +74,7 @@
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
 - Quiz-mode math flow records correctness, hints, reveals, and timing exactly like Guided mode, but suppresses instant correctness banners after answer entry and defers the question review to the summary screen.
 - Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
-- Reading UX: `170 WPM` is the target pace, speeds around that benchmark earn strong speed credit, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
+- Reading UX: `130 WPM` is the target pace, speed score is based on the percentage of that benchmark, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
 - Landing page UX: progress insights banner plus coaching panels help convert raw performance data into specific next steps without making the dashboard feel like an admin console.
 - Parent review UX: the same landing page exposes celebration, watchlist, and support-move notes so adults can quickly understand what to reinforce.
 - CSS animations: slideUp, popIn, celebBounce, fadeInOut, pulse, shake.

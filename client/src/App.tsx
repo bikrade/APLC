@@ -390,11 +390,11 @@ function getSessionCoachSummary(
   },
 ): { celebration: string; growthNote: string; nextStep: string } {
   if (subject === 'Reading') {
-    if (readingSummary.comprehensionScore >= 8 && readingSummary.averageWpm >= 160) {
+    if (readingSummary.comprehensionScore >= 8 && readingSummary.averageWpm >= 120) {
       return {
         celebration: 'You kept both meaning and momentum together in this reading session.',
         growthNote: 'That combination is exactly what strong readers build over time: pace with real understanding.',
-        nextStep: readingSummary.averageWpm >= 190
+        nextStep: readingSummary.averageWpm >= 180
           ? 'Next time, keep the same quality but slow down just enough to notice the small clues before the ending.'
           : 'Next time, keep the same care and aim for another steady read near your target pace.',
       }
@@ -402,14 +402,20 @@ function getSessionCoachSummary(
     if (readingSummary.comprehensionScore < 7) {
       return {
         celebration: 'You stayed with a full story and finished the reflection, which still matters a lot.',
-        growthNote: 'The main growth area now is holding on to the important details while you read.',
-        nextStep: 'On the next reading session, pause after each page and say the main idea aloud before moving on.',
+        growthNote: `Your comprehension score was ${readingSummary.comprehensionScore}/10 because some important story details or links between events were missing from your answer.`,
+        nextStep: readingSummary.averageWpm < 130
+          ? `On the next session, pause after each page, say the main idea aloud, and try to build from ${readingSummary.averageWpm} WPM toward 130 WPM.`
+          : 'On the next reading session, pause after each page and say the main idea aloud before moving on.',
       }
     }
     return {
       celebration: 'You completed the story thoughtfully and gave the app a real signal to coach from.',
-      growthNote: 'Your reading is developing, and the next step is making the pace and the understanding feel equally steady.',
-      nextStep: 'On the next session, aim for calm pace and one strong summary that names the problem, the turning point, and the outcome.',
+      growthNote: readingSummary.averageWpm < 130
+        ? `Your speed score is ${readingSummary.speedScore}/10 because speed is measured against a 130 WPM target. ${readingSummary.averageWpm} WPM is a solid start, and now the goal is to raise it without losing meaning.`
+        : 'Your reading is developing, and the next step is making the pace and the understanding feel equally steady.',
+      nextStep: readingSummary.averageWpm < 130
+        ? 'On the next session, keep your eyes moving line by line, avoid long pauses, and aim for a smoother pace toward 130 WPM.'
+        : 'On the next session, aim for calm pace and one strong summary that names the problem, the turning point, and the outcome.',
     }
   }
 
@@ -1506,7 +1512,7 @@ function App() {
       comprehensionScore: finalAnswer?.comprehensionScore ?? 0,
       speedScore: finalAnswer?.speedScore ?? 0,
       assessmentMode,
-      warning: averageWpm >= 220
+      warning: averageWpm >= 180
         ? 'This pace was extremely fast for the passage. Next time, slow down enough to really absorb the meaning.'
         : '',
     }
@@ -1907,7 +1913,7 @@ function App() {
                   <p className="insight-box-title">🎯 Next Best Focus</p>
                   {learningCoach?.bestNextStep && (
                     <p className="insight-box-copy">
-                      Start with {learningCoach.bestNextStep.subject}: {learningCoach.bestNextStep.title}. {learningCoach.bestNextStep.cta}
+                      {learningCoach.bestNextStep.title}. {learningCoach.bestNextStep.cta}
                     </p>
                   )}
                   {insights.recommendedFocus.length > 0 && (
@@ -2191,7 +2197,7 @@ function App() {
                     <p className="reading-page-title">{currentQuestion.title}</p>
                     <p className="reading-page-meta">{currentQuestion.wordCount ?? 0} words on this page</p>
                   </div>
-                  <div className="reading-target-chip">Target pace: 170 WPM</div>
+                  <div className="reading-target-chip">Target pace: 130 WPM</div>
                 </div>
                 <div className="reading-page-content">
                   {currentQuestion.content}
@@ -2447,7 +2453,7 @@ function App() {
   if (stage === 'summary') {
     const sessionCoach = getSessionCoachSummary(sessionSubject, answers, questions, readingSummary)
     if (sessionSubject === 'Reading') {
-      const targetHit = readingSummary.averageWpm >= 160 && readingSummary.averageWpm <= 180
+      const targetHit = readingSummary.averageWpm >= 120 && readingSummary.averageWpm <= 140
       return (
         <div className="summary-screen">
           <div className="summary-hero">
@@ -2462,9 +2468,9 @@ function App() {
               {getSessionModeMeta(sessionMode).shortLabel} · {' '}
               {targetHit
                 ? `On target at ${readingSummary.averageWpm} WPM`
-                : readingSummary.averageWpm > 190
+                : readingSummary.averageWpm > 180
                   ? `Fast pace: ${readingSummary.averageWpm} WPM`
-                  : `Target pace: 170 WPM`}
+                  : `Target pace: 130 WPM`}
             </div>
           </div>
 
@@ -2493,7 +2499,7 @@ function App() {
 
           <div className="reading-summary-note">
             You read about {readingSummary.totalWords.toLocaleString()} words across {readingSummary.pagesRead} pages.
-            {' '}Target reading pace is 170 WPM.
+            {' '}Target reading pace is 130 WPM, and speed score is based on how close you were to that target.
             {readingSummary.assessmentMode === 'quiz' && ' Because the pace was high, the final check switched to multiple choice.'}
             {readingSummary.warning && ` ${readingSummary.warning}`}
           </div>

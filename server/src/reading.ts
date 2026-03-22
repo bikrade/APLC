@@ -1,11 +1,11 @@
 import { generateReadingStoryAI, isOpenAIConfigured } from './openai'
 import type { GeneratedReadingStory, Question, QuestionState, ReadingQuizItem, SessionRecord } from './types'
 
-const READING_TARGET_MIN_WPM = 160
-const READING_TARGET_MAX_WPM = 180
-const READING_TARGET_WPM = 170
-const READING_QUIZ_THRESHOLD_WPM = 190
-const READING_WARNING_THRESHOLD_WPM = 220
+const READING_TARGET_MIN_WPM = 120
+const READING_TARGET_MAX_WPM = 140
+const READING_TARGET_WPM = 130
+const READING_QUIZ_THRESHOLD_WPM = 150
+const READING_WARNING_THRESHOLD_WPM = 180
 
 type StoryBlueprint = {
   place: string
@@ -303,14 +303,14 @@ export function buildReadingGenerationProfile(allSessions: SessionRecord[]): Rea
   const avgReadingScore = recentSignals.reduce((sum, signal) => sum + signal.readingScore, 0) / recentSignals.length
   const avgComprehension = recentSignals.reduce((sum, signal) => sum + signal.comprehensionScore, 0) / recentSignals.length
 
-  if (avgWpm >= 185 && avgReadingScore >= 8.5 && avgComprehension >= 8.5) {
+  if (avgWpm >= 150 && avgReadingScore >= 8.5 && avgComprehension >= 8.5) {
     return {
       challengeTier: 'advanced',
       performanceSummary: `Adi has recently been reading very quickly (${Math.round(avgWpm)} WPM) while still showing strong understanding (${avgComprehension.toFixed(1)}/10 comprehension, ${avgReadingScore.toFixed(1)}/10 overall). Increase the depth, nuance, inference load, and sentence sophistication gradually so the passage still feels rewarding but requires closer reading.`,
     }
   }
 
-  if (avgWpm >= 165 && avgReadingScore >= 7.5 && avgComprehension >= 7.5) {
+  if (avgWpm >= 130 && avgReadingScore >= 7.5 && avgComprehension >= 7.5) {
     return {
       challengeTier: 'stretch',
       performanceSummary: `Adi is handling current reading material confidently (${Math.round(avgWpm)} WPM, ${avgComprehension.toFixed(1)}/10 comprehension). Raise the challenge slightly with richer description, subtler motives, and a bit more inferential thinking, while keeping the story highly readable and engaging.`,
@@ -443,14 +443,8 @@ export function computeReadingWpm(questions: Question[], answers: QuestionState[
 }
 
 function computeSpeedScore(wpm: number): number {
-  if (wpm >= 170) return 10
-  if (wpm >= 160) return 9
-  if (wpm >= 150) return 8
-  if (wpm >= 140) return 7
-  if (wpm >= 130) return 5
-  if (wpm >= 115) return 3
-  if (wpm > 0) return 1
-  return 0
+  if (wpm <= 0) return 0
+  return Math.max(0, Math.min(10, Math.floor((wpm / READING_TARGET_WPM) * 10)))
 }
 
 function normalizeText(value: string): string {
@@ -534,13 +528,13 @@ function buildSpeedMessage(averageWpm: number): string {
     return `Your reading pace was ${averageWpm} WPM. That is very fast for this text, so slow down a little and make sure you are truly absorbing the meaning.`
   }
   if (averageWpm > READING_TARGET_MAX_WPM) {
-    return `Your reading pace was ${averageWpm} WPM, which is strong and above the target pace of ${READING_TARGET_WPM} WPM.`
+    return `Your reading pace was ${averageWpm} WPM, which is above the target pace of ${READING_TARGET_WPM} WPM. That gives you a full 10/10 speed score, so the goal is keeping that pace without losing meaning.`
   }
   if (averageWpm >= READING_TARGET_MIN_WPM && averageWpm <= READING_TARGET_MAX_WPM) {
-    return `Your reading pace was ${averageWpm} WPM, right around the target pace of ${READING_TARGET_WPM} WPM.`
+    return `Your reading pace was ${averageWpm} WPM, right around the target pace of ${READING_TARGET_WPM} WPM. Speed is scored as a percentage of that target, so this lands close to a full score.`
   }
   if (averageWpm > 0) {
-    return `Your reading pace was ${averageWpm} WPM, below the target pace of ${READING_TARGET_WPM} WPM.`
+    return `Your reading pace was ${averageWpm} WPM, below the target pace of ${READING_TARGET_WPM} WPM. Speed is scored by the percentage of target pace, so ${averageWpm} WPM earns ${computeSpeedScore(averageWpm)}/10.`
   }
   return 'We could not calculate a reading speed yet.'
 }
@@ -575,10 +569,10 @@ export function evaluateReadingSummary(
 
   const comprehensionMessage =
     comprehensionScore >= 8
-      ? `${rubric.explanation} It included the key characters, the problem, and how things changed.`
+      ? `Comprehension was ${comprehensionScore}/10 because the summary captured the main character, the central problem, and how the story changed by the end. ${rubric.explanation}`
       : comprehensionScore >= 6
-        ? `${rubric.explanation} Add one or two stronger details from the middle of the story.`
-        : `${rubric.explanation} Name the main character, the main problem, and what changed by the end.`
+        ? `Comprehension was ${comprehensionScore}/10 because the summary caught part of the story, but it missed some important middle details or cause-and-effect links. ${rubric.explanation} Add one or two stronger details from the middle next time.`
+        : `Comprehension was ${comprehensionScore}/10 because the summary was too thin to show the full story arc yet. ${rubric.explanation} Next time, name the main character, the main problem, and what changed by the end.`
 
   return {
     mode: 'summary',
@@ -616,10 +610,10 @@ export function evaluateReadingQuiz(
 
   const comprehensionMessage =
     quizResult.correctCount === quizResult.totalCount
-      ? 'You answered every comprehension check correctly, which shows the meaning stayed with you.'
+      ? `Comprehension was ${quizResult.score}/10 because you answered every comprehension check correctly, which shows the meaning stayed with you.`
       : quizResult.correctCount >= Math.max(3, quizResult.totalCount - 1)
-        ? 'You understood most of the key ideas from the passage.'
-        : 'The quiz shows that some important story details were missed, so slower and more careful reading would help.'
+        ? `Comprehension was ${quizResult.score}/10 because you understood most of the key ideas from the passage, even though a few details slipped.`
+        : `Comprehension was ${quizResult.score}/10 because too many key details were missed on the final check. Slower and more careful reading would help the meaning stick.`
 
   return {
     mode: 'quiz',

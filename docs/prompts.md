@@ -87,7 +87,7 @@ Runtime prompt context includes:
 - **Flow**: 5 reading pages (auto-pass, records read time) + either 1 free-text summary question or 1 multiple-choice comprehension quiz when reading pace is very high.
 - **Comprehension score** (0–10): based on keyword-group coverage for summaries or quiz correctness for fast-reader quiz mode.
 - **Quiz comprehension score** (0–10): based on 4 story-specific multiple-choice questions.
-- **Speed score** (0–10): below `170 WPM` trends low, reaching `170 WPM` earns full speed credit, and only speeds meaningfully above target are treated as very fast.
+- **Speed score** (0–10): uses the floored percentage of the `130 WPM` target pace, capped at 10, and only speeds meaningfully above target are treated as very fast.
 - **Warnings**: very high pace can trigger a caution that the learner may be skimming rather than reading carefully.
 - **Overall score**: weighted comprehension plus pace. Score >= 7 = pass.
 - **WPM source of truth**: reading WPM is calculated on the server from reading-page word counts and reading-page elapsed time only, and the client summary now displays that server-recorded value instead of recomputing its own version.

@@ -11,7 +11,7 @@
   "timezone": "Asia/Singapore",
   "preferredSessionLengthMinutes": 20,
   "dailyHabitTargetMinutes": 15,
-  "readingTargetWpm": 170,
+  "readingTargetWpm": 130,
   "strengths": [
     "good persistence",
     "can complete full sessions",

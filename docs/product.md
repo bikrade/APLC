@@ -83,7 +83,7 @@ Hints should be dynamically generated, only when help is asked
 Real authentication will be done at the absolute end only the product is ready to go live, keep dummy login till then
 Bring in an element of past performance influence future question in Phase 1 itself
 When difficulty changes, tell Adi clearly and supportively so he understands why the app is adjusting
-For reading, treat `170 WPM` as the target pace, reward reaching that pace on speed score, but warn and verify comprehension when pace climbs meaningfully above it
+For reading, treat `130 WPM` as the target pace, score speed by the percentage of that target, and warn plus verify comprehension when pace climbs meaningfully above it
 The home experience should include a visible best next step, subject mastery states, detailed insight guidance, and a compact parent review section on the same landing page
 The home experience should also show a simple, motivating daily-practice progress bar for yesterday and today so Adi can build a profile-driven daily habit
 The app should surface light in-flow reading coaching prompts and a short session-end coach summary so each session closes with celebration, reflection, and a next step

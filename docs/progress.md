@@ -90,7 +90,7 @@
   - Math sessions now start from subject-aware historical difficulty and adjust up/down gradually based on first-attempt correctness, pace, hint usage, reveal usage, and completion behavior, with multiple-question evidence required before each level shift
   - Reading sessions now generate a fresh story pack per session, including matching pages, summary guidance, quiz questions, and comprehension-scoring keywords
   - Difficulty changes surface as animated, supportive popups in the session UI
-  - Reading speed scoring corrected around a `170 WPM` target, with only meaningfully higher speeds treated as very fast
+  - Reading speed scoring is now normalized to a `130 WPM` target, with the score using the floored percentage of that pace and only meaningfully higher speeds treated as very fast
   - Very fast reading can switch the final assessment from free-text summary to a multiple-choice comprehension quiz with a warning about skimming risk
   - Test coverage expanded across server integration, client helper tests, and Playwright reading-quiz E2E flow
 - Learning coach layer added to the landing page:

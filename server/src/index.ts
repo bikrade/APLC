@@ -32,6 +32,10 @@ import {
   getReadingGenerationInputs,
   getReadingAssessmentMode,
   getReadingQuestionCount,
+  READING_TARGET_MAX_WPM,
+  READING_TARGET_MIN_WPM,
+  READING_TARGET_WPM,
+  READING_WARNING_THRESHOLD_WPM,
 } from './reading'
 import { logger, requestLogger, asyncHandler } from './logger'
 
@@ -173,6 +177,30 @@ function getSessionMode(session: SessionRecord): SessionMode {
 
 function getIsoDay(date: Date): string {
   return date.toISOString().slice(0, 10)
+}
+
+function getDateKeyInTimeZone(date: Date, timeZone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = formatter.formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000'
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01'
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01'
+  return `${year}-${month}-${day}`
+}
+
+function shiftDateKeyInTimeZone(dateKey: string, days: number, timeZone: string): string {
+  const [rawYear = '1970', rawMonth = '01', rawDay = '01'] = dateKey.split('-')
+  const year = Number.parseInt(rawYear, 10) || 1970
+  const month = Number.parseInt(rawMonth, 10) || 1
+  const day = Number.parseInt(rawDay, 10) || 1
+  const anchor = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  anchor.setUTCDate(anchor.getUTCDate() + days)
+  return getDateKeyInTimeZone(anchor, timeZone)
 }
 
 function getSessionPracticeTimeMs(session: SessionRecord): number {
@@ -578,6 +606,35 @@ function formatSubjectLabel(subject: Subject): string {
   return subject.toLowerCase()
 }
 
+function buildBestNextStepCopy(item: { subject: Subject; skill: string; reason: string; action: string }): {
+  title: string
+  reason: string
+  cta: string
+} {
+  if (item.subject === 'Reading') {
+    if (item.skill === 'Pace Control') {
+      return {
+        title: 'Steady reading pace',
+        reason: 'Adi will benefit most from reading at a calmer, more even pace so the meaning sticks.',
+        cta: 'Start one reading session and aim for a smooth pace near 130 WPM while keeping the story clear in your head.',
+      }
+    }
+    if (item.skill === 'Comprehension') {
+      return {
+        title: 'Lock in the main idea',
+        reason: 'The next gain will come from holding onto the key events and cause-and-effect links in the story.',
+        cta: 'After each page, pause and say the main idea out loud before moving on.',
+      }
+    }
+  }
+
+  return {
+    title: `${formatSubjectLabel(item.subject)}: ${item.skill}`,
+    reason: item.reason,
+    cta: item.action,
+  }
+}
+
 function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
   const completedSessions = allSessions
     .filter((session) => session.status === 'completed')
@@ -611,13 +668,13 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
       const comprehensionStage = getMasteryStage(comprehensionAvg, readingAssessments.length)
       const paceStage = paceAvg === null || readingAssessments.length < 2
         ? 'developing'
-        : paceAvg >= 160 && paceAvg <= 180
+        : paceAvg >= READING_TARGET_MIN_WPM && paceAvg <= READING_TARGET_MAX_WPM
           ? 'mastered'
-          : paceAvg < 145
+          : paceAvg < READING_TARGET_MIN_WPM
             ? 'fragile'
             : 'developing'
       const staminaStage = getMasteryStage(staminaScore, readingAssessments.length)
-      const overallScore = average([comprehensionAvg ?? 0, paceAvg !== null ? Math.min(100, Math.round((paceAvg / 170) * 100)) : 0, staminaScore ?? 0].filter((value) => value > 0))
+      const overallScore = average([comprehensionAvg ?? 0, paceAvg !== null ? Math.min(100, Math.round((paceAvg / READING_TARGET_WPM) * 100)) : 0, staminaScore ?? 0].filter((value) => value > 0))
       const overallStage = getMasteryStage(overallScore, readingAssessments.length)
 
       return {
@@ -628,7 +685,7 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
           : 'Reading needs a few completed sessions before mastery patterns become reliable.',
         skills: [
           { key: 'reading-comprehension', label: 'Comprehension', stage: comprehensionStage, accuracy: comprehensionAvg, evidenceCount: readingAssessments.length },
-          { key: 'reading-pace', label: 'Pace Control', stage: paceStage, accuracy: paceAvg !== null ? Math.min(100, Math.round((paceAvg / 170) * 100)) : null, evidenceCount: readingAssessments.length },
+          { key: 'reading-pace', label: 'Pace Control', stage: paceStage, accuracy: paceAvg !== null ? Math.min(100, Math.round((paceAvg / READING_TARGET_WPM) * 100)) : null, evidenceCount: readingAssessments.length },
           { key: 'reading-stamina', label: 'Reading Quality', stage: staminaStage, accuracy: staminaScore, evidenceCount: readingAssessments.length },
         ],
       }
@@ -767,13 +824,11 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
   const bestNextStep = revisitQueue[0]
     ? {
         subject: revisitQueue[0].subject,
-        title: `Best next step: ${revisitQueue[0].subject} · ${revisitQueue[0].skill}`,
-        reason: revisitQueue[0].reason,
-        cta: revisitQueue[0].action,
+        ...buildBestNextStepCopy(revisitQueue[0]),
       }
     : {
         subject: weakestSubject,
-        title: `Best next step: short ${formatSubjectLabel(weakestSubject)} session`,
+        title: `short ${formatSubjectLabel(weakestSubject)} session`,
         reason: 'A short, calm session is the best way to keep momentum without overload.',
         cta: `Start one guided ${formatSubjectLabel(weakestSubject)} session today.`,
       }
@@ -956,20 +1011,20 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
       focusAreas.push(`Complete your first ${subject.toLowerCase()} session so this area can start giving Adi targeted coaching.`)
     } else if (subject === 'Reading') {
       if (readingScore !== null && readingScore >= 8) strengths.push(`Reading quality is strong at ${readingScore}/10 overall.`)
-      if (averageWpm !== null && averageWpm >= 160 && averageWpm <= 180) strengths.push(`Reading pace is on target at ${averageWpm} WPM.`)
+      if (averageWpm !== null && averageWpm >= READING_TARGET_MIN_WPM && averageWpm <= READING_TARGET_MAX_WPM) strengths.push(`Reading pace is on target at ${averageWpm} WPM.`)
       if (comprehensionScore !== null && comprehensionScore >= 8) strengths.push(`Comprehension is a strength at ${comprehensionScore}/10.`)
 
-      if (averageWpm !== null && averageWpm < 160) focusAreas.push(`Reading pace is ${averageWpm} WPM. Work toward the 170 WPM target pace.`)
-      if (averageWpm !== null && averageWpm > 190) focusAreas.push(`Reading pace is ${averageWpm} WPM. Slow down slightly to protect comprehension.`)
-      if (comprehensionScore !== null && comprehensionScore < 7) focusAreas.push(`Comprehension is ${comprehensionScore}/10. Focus on main idea and supporting details.`)
+      if (averageWpm !== null && averageWpm < READING_TARGET_MIN_WPM) focusAreas.push(`Reading pace is ${averageWpm} WPM. Build toward the ${READING_TARGET_WPM} WPM target with smoother page-by-page pacing.`)
+      if (averageWpm !== null && averageWpm >= READING_WARNING_THRESHOLD_WPM) focusAreas.push(`Reading pace is ${averageWpm} WPM. Slow down slightly so comprehension stays strong.`)
+      if (comprehensionScore !== null && comprehensionScore < 7) focusAreas.push(`Comprehension is ${comprehensionScore}/10. Focus on the main idea, the problem, and the ending.`)
 
       headline = readingScore !== null
         ? `Reading is ${trend === 'improving' ? 'improving' : trend === 'declining' ? 'slipping a little' : 'holding steady'} at ${readingScore}/10 overall.`
         : 'Reading has enough data to start building a clearer pattern.'
       recommendedNextStep = comprehensionScore !== null && comprehensionScore < 7
         ? 'After each page, pause and say the main idea out loud before writing the summary.'
-        : averageWpm !== null && averageWpm < 160
-          ? 'Do one reading session focused on building toward a steady 170 WPM pace without losing meaning.'
+        : averageWpm !== null && averageWpm < READING_TARGET_MIN_WPM
+          ? `Do one reading session focused on building toward a steady ${READING_TARGET_WPM} WPM pace without losing meaning.`
           : 'Keep balancing reading pace and comprehension to deepen consistency.'
     } else {
       if (accuracy !== null && accuracy >= 85) strengths.push(`${subject} accuracy is strong at ${accuracy}%.`)
@@ -1167,11 +1222,9 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
     const learningCoach = buildLearningCoach(allSessions)
-    const today = new Date()
-    const todayIso = getIsoDay(today)
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayIso = getIsoDay(yesterday)
+    const learnerTimeZone = profile.timezone || 'UTC'
+    const todayIso = getDateKeyInTimeZone(new Date(), learnerTimeZone)
+    const yesterdayIso = shiftDateKeyInTimeZone(todayIso, -1, learnerTimeZone)
 
     // Total sessions
     const totalSessions = allSessions.length
@@ -1194,7 +1247,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
     // Activity days grouped by total practice time for the heatmap.
     const activityByDate = new Map<string, number>()
     for (const session of allSessions) {
-      const day = session.startedAt.slice(0, 10)
+      const day = getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone)
       const practiceMs = getSessionPracticeTimeMs(session)
       activityByDate.set(day, (activityByDate.get(day) ?? 0) + practiceMs)
     }
@@ -1202,10 +1255,10 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, practiceMs]) => ({ date, practiceMs }))
     const todayPracticeMs = allSessions
-      .filter((session) => session.startedAt.slice(0, 10) === todayIso)
+      .filter((session) => getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone) === todayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
     const yesterdayPracticeMs = allSessions
-      .filter((session) => session.startedAt.slice(0, 10) === yesterdayIso)
+      .filter((session) => getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone) === yesterdayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
 
     // Current streak (consecutive days with at least one session)
@@ -1215,9 +1268,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
     for (const day of uniqueDays) {
       if (day === checkDate) {
         currentStreak++
-        const d = new Date(checkDate)
-        d.setDate(d.getDate() - 1)
-        checkDate = d.toISOString().slice(0, 10)
+        checkDate = shiftDateKeyInTimeZone(checkDate, -1, learnerTimeZone)
       } else {
         break
       }
@@ -1244,8 +1295,9 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       const totalQuestionsAnswered = totalAnswered
 
       // Recent = last 3 sessions, older = before that
-      const recentSessions = sessionAccuracies.slice(-3)
-      const olderSessions = sessionAccuracies.slice(0, -3)
+      const chronologicalAccuracies = [...sessionAccuracies].reverse()
+      const recentSessions = chronologicalAccuracies.slice(-3)
+      const olderSessions = chronologicalAccuracies.slice(0, -3)
       const recentAvg = Math.round(recentSessions.reduce((a, b) => a + b, 0) / recentSessions.length)
       const olderAvg = olderSessions.length > 0
         ? Math.round(olderSessions.reduce((a, b) => a + b, 0) / olderSessions.length)
@@ -1258,8 +1310,8 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
 
       if (olderSessions.length === 0) {
         // Only recent sessions, compare first vs last
-        const firstAcc = sessionAccuracies[0] ?? 0
-        const lastAcc = sessionAccuracies[sessionAccuracies.length - 1] ?? 0
+        const firstAcc = chronologicalAccuracies[0] ?? 0
+        const lastAcc = chronologicalAccuracies[chronologicalAccuracies.length - 1] ?? 0
         const d = lastAcc - firstAcc
         if (d >= 10) {
           trend = 'improving'

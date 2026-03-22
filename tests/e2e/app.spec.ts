@@ -85,6 +85,6 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
 
   await expect(page.getByText(/Reading Session Complete!/i)).toBeVisible()
   await expect(page.getByText(/Average WPM/i)).toBeVisible()
-  await expect(page.getByText(/Target reading pace is 170 WPM\./i)).toBeVisible()
+  await expect(page.getByText(/Target reading pace is 130 WPM, and speed score is based on how close you were to that target\./i)).toBeVisible()
   await expect(page.getByText(/Overall Reading/i)).toBeVisible()
 })
