@@ -167,11 +167,13 @@ function getGreeting(name: string): string {
   return `Good evening, ${name}! 🌙`
 }
 
-function getGreetingTheme(): 'morning' | 'afternoon' | 'evening' {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'morning'
-  if (hour < 17) return 'afternoon'
-  return 'evening'
+function formatCurrentDate(): string {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function getCelebrationMessages(): string[] {
@@ -1189,7 +1191,6 @@ function App() {
   if (stage === 'home') {
     const streak = dashStats?.currentStreak ?? 0
     const activityDays = dashStats?.activityDays ?? []
-    const greetingTheme = getGreetingTheme()
 
     return (
       <div className="dashboard-screen">
@@ -1215,16 +1216,9 @@ function App() {
         <div className="dashboard-body">
           {error && <div className="error-msg">⚠️ {error}</div>}
 
-          {/* Welcome Banner */}
-          <div className={`welcome-banner ${greetingTheme}`}>
-            <div className="welcome-text">
-              <h2>{getGreeting(selectedUserName)}</h2>
-              <p>
-                {insights?.hasEnoughData
-                  ? insights.message
-                  : "Ready to level up your math skills today?"}
-              </p>
-            </div>
+          <div className="welcome-header">
+            <p className="welcome-date">{formatCurrentDate()}</p>
+            <h2 className="welcome-title">{getGreeting(selectedUserName)}</h2>
           </div>
 
           {/* Subject Selection — primary action, shown near top */}
