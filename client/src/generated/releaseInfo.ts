@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "channel": "beta",
-  "displayLabel": "v0.5.0 beta",
-  "shortSha": "755eba2",
+  "displayLabel": "v0.6.0 beta",
+  "shortSha": "646b15a",
   "releaseDate": "2026-03-22",
-  "headline": "Add learning coach and release badge",
+  "headline": "Add adaptive session modes and fix CI deploy",
   "changes": [
+    {
+      "sha": "646b15a",
+      "date": "2026-03-22",
+      "summary": "Add adaptive session modes and fix CI deploy"
+    },
     {
       "sha": "755eba2",
       "date": "2026-03-22",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "1247b44",
       "date": "2026-03-22",
       "summary": "Enrich subject insights dashboard"
-    },
-    {
-      "sha": "2bd01f8",
-      "date": "2026-03-22",
-      "summary": "Simplify dashboard welcome header"
     }
   ]
 } as const

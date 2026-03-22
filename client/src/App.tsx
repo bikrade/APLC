@@ -73,7 +73,10 @@ type DashboardStats = {
   overallAccuracy: number
   avgTimePerQuestion: number
   currentStreak: number
-  activityDays: string[]
+  activityDays: Array<{
+    date: string
+    practiceMs: number
+  }>
   dailyPractice?: {
     targetMs: number
     todayMs: number
@@ -363,7 +366,7 @@ function getSessionModeMeta(mode: SessionMode): { label: string; shortLabel: str
     return {
       label: 'Quiz',
       shortLabel: 'Quiz',
-      description: 'No instant right-or-wrong feedback. See the results at the end.',
+      description: 'Results only at the end.',
     }
   }
   return {
@@ -500,7 +503,7 @@ function getWeekCountForWindow(monthCount: number, now: Date): number {
   return Math.ceil((endGridDate.getTime() - startGridDate.getTime() + 86400000) / (7 * 86400000))
 }
 
-function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
+function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string; practiceMs: number }> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const cellSize = 12
@@ -537,23 +540,25 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
     return () => window.removeEventListener('resize', updateWidth)
   }, [])
 
-  const cells: { date: string; level: number; inRange: boolean }[] = []
+  const practiceByDate = useMemo(() => new Map(activityDays.map((entry) => [entry.date, entry.practiceMs])), [activityDays])
+
+  const cells: { date: string; level: number; inRange: boolean; practiceMs: number }[] = []
   for (let date = new Date(startGridDate); date <= endGridDate; date.setDate(date.getDate() + 1)) {
     const iso = date.toISOString().slice(0, 10)
-    const count = activityDays.filter((a) => a.slice(0, 10) === iso).length
+    const practiceMs = practiceByDate.get(iso) ?? 0
     let level = 0
-    if (count === 1) level = 1
-    else if (count === 2) level = 2
-    else if (count === 3) level = 3
-    else if (count >= 4) level = 4
+    if (practiceMs >= 60 * 60 * 1000) level = 4
+    else if (practiceMs >= 30 * 60 * 1000) level = 2
+    else if (practiceMs > 0) level = 1
     cells.push({
       date: iso,
       level,
+      practiceMs,
       inRange: date >= startDate && date <= endDate,
     })
   }
 
-  const weeks: { date: string; level: number; inRange: boolean }[][] = []
+  const weeks: { date: string; level: number; inRange: boolean; practiceMs: number }[][] = []
   for (let i = 0; i < cells.length; i += 7) {
     weeks.push(cells.slice(i, i + 7))
   }
@@ -603,7 +608,7 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
                     key={cell.date}
                     className={`heatmap-cell ${cell.inRange ? '' : 'outside-range'}`.trim()}
                     data-level={cell.level}
-                    title={cell.inRange ? `${cell.date}: ${cell.level} session${cell.level !== 1 ? 's' : ''}` : ''}
+                    title={cell.inRange ? `${cell.date}: ${formatPracticeMinutes(cell.practiceMs)}` : ''}
                   />
                 ))}
               </div>
@@ -613,10 +618,10 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
       </div>
       <div className="heatmap-legend">
         <span>Less</span>
-        {[0, 1, 2, 3, 4].map((l) => (
+        {[0, 1, 2, 4].map((l) => (
           <div key={l} className="heatmap-legend-cell heatmap-cell" data-level={l} />
         ))}
-        <span>More</span>
+        <span>60+ min</span>
       </div>
     </div>
   )
@@ -1647,14 +1652,23 @@ function App() {
 
           {progressInsights && (
             <div className={`progress-insights-banner trend-${progressInsights.trend}`}>
-              <div>
+              <div className="progress-insights-copy">
                 <p className="progress-insights-kicker">{progressInsights.trendLabel}</p>
                 <p className="progress-insights-message">{progressInsights.message}</p>
               </div>
               <div className="progress-insights-stats">
-                <span>{progressInsights.recentAccuracy}% recent</span>
-                <span>{progressInsights.bestAccuracy}% best</span>
-                <span>{progressInsights.totalQuestionsAnswered} answered</span>
+                <div className="progress-insights-stat">
+                  <span className="progress-insights-stat-value">{progressInsights.recentAccuracy}%</span>
+                  <span className="progress-insights-stat-label">Recent</span>
+                </div>
+                <div className="progress-insights-stat">
+                  <span className="progress-insights-stat-value">{progressInsights.bestAccuracy}%</span>
+                  <span className="progress-insights-stat-label">Best</span>
+                </div>
+                <div className="progress-insights-stat">
+                  <span className="progress-insights-stat-value">{progressInsights.totalQuestionsAnswered}</span>
+                  <span className="progress-insights-stat-label">Answered</span>
+                </div>
               </div>
             </div>
           )}
@@ -1694,36 +1708,22 @@ function App() {
           )}
 
           {learningCoach && (
-            <div className="coach-grid">
-              <div className="coach-panel coach-mission-panel">
-                <h3 className="panel-title">🗺️ {learningCoach.weeklyMission.title}</h3>
-                <p className="coach-panel-subtitle">{learningCoach.weeklyMission.subtitle}</p>
-                <div className="mission-list">
-                  {learningCoach.weeklyMission.items.map((item) => {
-                    const meta = getMissionStatusMeta(item.status)
-                    return (
-                      <div key={item.id} className={`mission-item status-${item.status}`}>
-                        <div className="mission-badge">{meta.icon} {meta.label}</div>
-                        <div>
-                          <p className="mission-label">{item.label}</p>
-                          <p className="mission-detail">{item.detail}</p>
-                        </div>
+            <div className="coach-panel coach-mission-panel">
+              <h3 className="panel-title">🗺️ {learningCoach.weeklyMission.title}</h3>
+              <p className="coach-panel-subtitle">{learningCoach.weeklyMission.subtitle}</p>
+              <div className="mission-list">
+                {learningCoach.weeklyMission.items.map((item) => {
+                  const meta = getMissionStatusMeta(item.status)
+                  return (
+                    <div key={item.id} className={`mission-item status-${item.status}`}>
+                      <div className={`mission-badge status-${item.status}`}>{meta.icon} {meta.label}</div>
+                      <div>
+                        <p className="mission-label">{item.label}</p>
+                        <p className="mission-detail">{item.detail}</p>
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="coach-panel">
-                <h3 className="panel-title">🌱 Learning Habits</h3>
-                <div className="habit-signal-list">
-                  {learningCoach.habitSignals.map((signal) => (
-                    <div key={signal.label} className={`habit-signal tone-${signal.tone}`}>
-                      <span className="habit-signal-label">{signal.label}</span>
-                      <span className="habit-signal-value">{signal.value}</span>
                     </div>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1747,6 +1747,8 @@ function App() {
                 const latestInProgressSession = latestInProgressBySubject[subject.id]
                 const unfinishedForSubject = inProgressSessions.filter((session) => session.subject === subject.id)
                 const isLaunchingThisSubject = launchState?.subject === subject.id
+                const lockedSessionMode = latestInProgressSession?.sessionMode
+                const displayedSessionMode = lockedSessionMode ?? sessionModePreferences[subject.id]
                 return (
                   <div key={subject.id} className="subject-card active">
                     <div className="subject-badge">Active</div>
@@ -1760,14 +1762,16 @@ function App() {
                           <button
                             key={mode}
                             type="button"
-                            className={`session-mode-option ${sessionModePreferences[subject.id] === mode ? 'selected' : ''}`}
+                            className={`session-mode-option ${displayedSessionMode === mode ? 'selected' : ''}`}
                             onClick={() => setSessionModePreferences((current) => ({ ...current, [subject.id]: mode }))}
+                            disabled={Boolean(lockedSessionMode && lockedSessionMode !== mode)}
+                            aria-disabled={Boolean(lockedSessionMode && lockedSessionMode !== mode)}
                           >
                             <span>{getSessionModeMeta(mode).shortLabel}</span>
                           </button>
                         ))}
                       </div>
-                      <p className="session-mode-picker-copy">{getSessionModeMeta(sessionModePreferences[subject.id]).description}</p>
+                      <p className="session-mode-picker-copy">{getSessionModeMeta(displayedSessionMode).description}</p>
                     </div>
                     {latestInProgressSession && (
                       <div className="subject-session-stack">
@@ -1810,7 +1814,7 @@ function App() {
                         <span className="loading-dots"><span /><span /><span /></span>
                       ) : latestInProgressSession
                         ? `Continue ${getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} →`
-                        : `Start ${getSessionModeMeta(sessionModePreferences[subject.id]).shortLabel} →`}
+                        : `Start ${getSessionModeMeta(displayedSessionMode).shortLabel} →`}
                     </button>
                   </div>
                 )
@@ -1852,7 +1856,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="coach-panel">
+              <div className="coach-panel practice-again-panel">
                 <h3 className="panel-title">🔁 Practice Again Soon</h3>
                 {learningCoach.revisitQueue.length > 0 ? (
                   <div className="revisit-list">
@@ -2006,6 +2010,20 @@ function App() {
           {learningCoach && (
             <div className="coach-panel parent-review-panel">
               <h3 className="panel-title">👨‍👩‍👦 Parent Review</h3>
+              <div className="parent-review-habits">
+                <div className="parent-review-habits-copy">
+                  <p className="parent-review-habits-kicker">Learning Habits</p>
+                  <p className="parent-review-habits-text">A compact weekly snapshot of first-try confidence, independence, and working pace.</p>
+                </div>
+                <div className="habit-signal-list compact">
+                  {learningCoach.habitSignals.map((signal) => (
+                    <div key={signal.label} className={`habit-signal tone-${signal.tone}`}>
+                      <span className="habit-signal-label">{signal.label}</span>
+                      <span className="habit-signal-value">{signal.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div className="parent-review-grid">
                 <div className="insight-box strengths">
                   <p className="insight-box-title">What To Feel Good About</p>

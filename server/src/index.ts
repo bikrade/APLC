@@ -1092,8 +1092,16 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
     const overallAccuracy = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0
     const avgTimePerQuestion = totalAnswered > 0 ? Math.round(totalTimeMs / totalAnswered / 1000) : 0
 
-    // Activity days (ISO date strings for heatmap)
-    const activityDays: string[] = allSessions.map((s) => s.startedAt.slice(0, 10))
+    // Activity days grouped by total practice time for the heatmap.
+    const activityByDate = new Map<string, number>()
+    for (const session of allSessions) {
+      const day = session.startedAt.slice(0, 10)
+      const practiceMs = getSessionPracticeTimeMs(session)
+      activityByDate.set(day, (activityByDate.get(day) ?? 0) + practiceMs)
+    }
+    const activityDays = [...activityByDate.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, practiceMs]) => ({ date, practiceMs }))
     const todayPracticeMs = allSessions
       .filter((session) => session.startedAt.slice(0, 10) === todayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
@@ -1102,7 +1110,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
 
     // Current streak (consecutive days with at least one session)
-    const uniqueDays = [...new Set(activityDays)].sort().reverse()
+    const uniqueDays = activityDays.map((entry) => entry.date).sort().reverse()
     let currentStreak = 0
     let checkDate = todayIso
     for (const day of uniqueDays) {

@@ -524,14 +524,13 @@ describe('APLC backend', () => {
     const res = await request(ctx.app).get('/dashboard/adi')
     expect(res.status).toBe(200)
 
-    // All 4 sessions contribute to activityDays
-    expect(res.body.activityDays).toHaveLength(4)
-    expect(res.body.activityDays).toContain('2026-03-15')
-    expect(res.body.activityDays).toContain('2026-03-20')
-    expect(res.body.activityDays).toContain('2026-03-21')
-
-    // 2 sessions on March 20
-    expect(res.body.activityDays.filter((d: string) => d === '2026-03-20')).toHaveLength(2)
+    // Activity days are grouped by date and carry total practice time.
+    expect(res.body.activityDays).toHaveLength(3)
+    expect(res.body.activityDays).toEqual(expect.arrayContaining([
+      expect.objectContaining({ date: '2026-03-15', practiceMs: 5000 }),
+      expect.objectContaining({ date: '2026-03-20', practiceMs: 10000 }),
+      expect.objectContaining({ date: '2026-03-21', practiceMs: 5000 }),
+    ]))
 
     // Stats from 3 completed sessions only
     expect(res.body.totalSessions).toBe(4)

@@ -629,6 +629,7 @@
 }
 
 .coach-grid-lower {
+  grid-template-columns: 1fr;
   margin-top: 16px;
 }
 
@@ -693,6 +694,21 @@
   color: var(--color-text-primary);
 }
 
+.mission-badge.status-done {
+  background: rgba(88, 204, 2, 0.16);
+  color: #2f7d18;
+}
+
+.mission-badge.status-in-progress {
+  background: rgba(28, 176, 246, 0.12);
+  color: #0a6fa0;
+}
+
+.mission-badge.status-up-next {
+  background: rgba(245, 158, 11, 0.12);
+  color: #9a3412;
+}
+
 .mission-label,
 .mastery-card-title,
 .revisit-subject {
@@ -714,6 +730,10 @@
 
 .habit-signal-list {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.habit-signal-list.compact {
+  gap: 12px;
 }
 
 .habit-signal {
@@ -756,6 +776,7 @@
 
 .mastery-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
 }
 
 .mastery-card {
@@ -774,6 +795,15 @@
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
+}
+
+.mastery-card-header {
+  flex-wrap: wrap;
+}
+
+.mastery-card-header > div {
+  min-width: 0;
+  flex: 1 1 180px;
 }
 
 .mastery-card-summary {
@@ -822,6 +852,11 @@
   color: #9a3412;
 }
 
+.mastery-stage-pill,
+.mastery-stage-chip {
+  flex-shrink: 0;
+}
+
 .revisit-item {
   border-radius: 16px;
   padding: 16px 18px;
@@ -841,8 +876,51 @@
   margin-top: 16px;
 }
 
+.parent-review-habits {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(0, 2fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fbfcff 0%, #f6fbff 100%);
+  border: 1px solid rgba(28, 176, 246, 0.12);
+}
+
+.parent-review-habits-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.parent-review-habits-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.parent-review-habits-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
 .parent-review-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.parent-review-grid > .insight-box {
+  height: 100%;
+}
+
+.parent-review-grid .insight-box.recommendations {
+  margin-top: 0;
 }
 
 .panel-title {
@@ -1249,7 +1327,7 @@
 }
 
 .heatmap-cell[data-level="1"] { background: #d7ffb8; }
-.heatmap-cell[data-level="2"] { background: #9be84a; }
+.heatmap-cell[data-level="2"] { background: #a6e56f; }
 .heatmap-cell[data-level="3"] { background: #58cc02; }
 .heatmap-cell[data-level="4"] { background: #46a302; }
 
@@ -1395,11 +1473,20 @@
   transform: translateY(-1px);
 }
 
+.session-mode-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: #f3f4f6;
+  color: var(--color-text-muted);
+  transform: none;
+}
+
 .session-mode-picker-copy {
   margin: 8px 0 0;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.35;
   color: var(--color-text-secondary);
+  min-height: 16px;
 }
 
 .subject-session-stack {
@@ -3164,7 +3251,8 @@
 .btn-home-card-label {
   font-size: 18px;
   font-weight: 800;
-  color: var(--color-text-primary);
+  color: #0a6fa0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
   line-height: 1.2;
 }
 
@@ -3429,10 +3517,14 @@
   padding: 18px 22px;
   margin-bottom: 16px;
   border: 2px solid transparent;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.95fr);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
+}
+
+.progress-insights-copy {
+  min-width: 0;
 }
 
 .progress-insights-banner.trend-improving {
@@ -3461,18 +3553,22 @@
 }
 
 .progress-insights-stats {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .progress-insights-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  flex: 1;
-  min-width: 80px;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(31, 36, 55, 0.08);
 }
 
 .progress-insights-stat-value {
@@ -3484,11 +3580,33 @@
 
 .progress-insights-stat-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--color-text-secondary);
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.05em;
+}
+
+.practice-again-panel {
+  margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+  .parent-review-habits {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-insights-banner {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .progress-insights-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }
 
 /* ── Summary Target Badge ────────────────────────────────────── */
