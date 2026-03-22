@@ -316,6 +316,12 @@ type LearningCoach = {
   habitSignals: HabitSignal[]
 }
 
+type LastCompletedSession = {
+  sessionId: string
+  completedAt: string
+  sessionMode: SessionMode
+}
+
 function detectMathMisconception(question: SessionRecord['questions'][number], userAnswer: number, correctAnswer: number): string | undefined {
   if (!Number.isFinite(userAnswer) || !Number.isFinite(correctAnswer)) return undefined
   const prompt = question.prompt.toLowerCase()
@@ -611,6 +617,8 @@ function buildBestNextStepCopy(item: { subject: Subject; skill: string; reason: 
   reason: string
   cta: string
 } {
+  const subjectLabel = formatSubjectLabel(item.subject)
+
   if (item.subject === 'Reading') {
     if (item.skill === 'Pace Control') {
       return {
@@ -628,10 +636,42 @@ function buildBestNextStepCopy(item: { subject: Subject; skill: string; reason: 
     }
   }
 
+  if (item.skill === 'Answer reveal needed') {
+    return {
+      title: `In ${subjectLabel}, try one more step on your own`,
+      reason: 'The next improvement will come from slowing down and thinking through the problem before revealing the full answer.',
+      cta: `Start a short ${subjectLabel} guided session and try a hint or one written step before revealing the answer.`,
+    }
+  }
+
+  if (item.skill === 'Careless arithmetic') {
+    return {
+      title: `In ${subjectLabel}, slow down and check each step`,
+      reason: 'The answers are often close, which means a calmer check could turn near-misses into correct answers.',
+      cta: `Start a short ${subjectLabel} guided session and double-check each calculation before you submit.`,
+    }
+  }
+
+  if (item.skill === 'Operation setup') {
+    return {
+      title: `In ${subjectLabel}, focus on setting up the problem correctly`,
+      reason: 'Getting the setup right first will make the rest of the problem much easier to solve.',
+      cta: `Start a short ${subjectLabel} guided session and pause to decide the right setup before calculating.`,
+    }
+  }
+
+  if (item.skill === 'Decimal place value' || item.skill === 'Percent to decimal conversion' || item.skill === 'Fraction procedure' || item.skill === 'Fraction conversion') {
+    return {
+      title: `In ${subjectLabel}, focus on ${item.skill.toLowerCase()}`,
+      reason: 'This skill needs one more calm practice cycle so it feels clear and reliable.',
+      cta: `Start a short ${subjectLabel} guided session and work carefully through ${item.skill.toLowerCase()} questions.`,
+    }
+  }
+
   return {
-    title: `${formatSubjectLabel(item.subject)}: ${item.skill}`,
-    reason: item.reason,
-    cta: item.action,
+    title: `In ${subjectLabel}, focus on ${item.skill.toLowerCase()}`,
+    reason: 'This is the area that will help the most if you give it one calm round of practice next.',
+    cta: `Start the next ${subjectLabel} session and take extra care on ${item.skill.toLowerCase()} questions.`,
   }
 }
 
@@ -1261,6 +1301,20 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       .filter((session) => getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone) === yesterdayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
 
+    const latestCompletedBySubject = Object.fromEntries((['Multiplication', 'Division', 'Reading'] as Subject[]).map((subject) => {
+      const latestSession = completedSessions
+        .filter((session) => session.subject === subject)
+        .sort((a, b) => new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime())[0]
+
+      return [subject, latestSession
+        ? {
+            sessionId: latestSession.id,
+            completedAt: latestSession.completedAt ?? latestSession.startedAt,
+            sessionMode: getSessionMode(latestSession),
+          }
+        : null]
+    })) as Record<Subject, LastCompletedSession | null>
+
     // Current streak (consecutive days with at least one session)
     const uniqueDays = activityDays.map((entry) => entry.date).sort().reverse()
     let currentStreak = 0
@@ -1369,6 +1423,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
         todayMs: todayPracticeMs,
         yesterdayMs: yesterdayPracticeMs,
       },
+      latestCompletedBySubject,
       progressInsights,
       learningCoach,
     })
@@ -1561,6 +1616,7 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
     subject: session.subject,
     sessionMode: getSessionMode(session),
     status: session.status,
+    completedAt: session.completedAt,
     currentIndex: session.currentIndex,
     questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
     answers: session.answers,
@@ -1676,6 +1732,7 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     explanation: hydratedQuestion.explanation,
     currentIndex: session.currentIndex,
     status: session.status,
+    completedAt: session.completedAt,
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
     difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
@@ -1741,6 +1798,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
         explanation: 'Nice focus. Move on to the next page when you are ready.',
         currentIndex: session.currentIndex,
         status: session.status,
+        completedAt: session.completedAt,
         answers: session.answers,
         questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
         totalTokensUsed: session.totalTokensUsed,
@@ -1801,6 +1859,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
       explanation: readingResult.explanation,
       currentIndex: session.currentIndex,
       status: session.status,
+      completedAt: session.completedAt,
       answers: session.answers,
       questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
       totalTokensUsed: session.totalTokensUsed,
@@ -1901,6 +1960,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     explanation,
     currentIndex: session.currentIndex,
     status: session.status,
+    completedAt: session.completedAt,
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
     totalTokensUsed: session.totalTokensUsed,

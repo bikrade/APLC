@@ -82,7 +82,14 @@ type DashboardStats = {
     todayMs: number
     yesterdayMs: number
   }
+  latestCompletedBySubject?: Record<Subject, LastCompletedSession | null>
   learningCoach?: LearningCoach
+}
+
+type LastCompletedSession = {
+  sessionId: string
+  completedAt: string
+  sessionMode: SessionMode
 }
 
 type MissionStatus = 'done' | 'in-progress' | 'up-next'
@@ -209,6 +216,7 @@ type StartSessionResponse = {
   questions: Question[]
   answers: AnswerState[]
   currentIndex: number
+  completedAt?: string
   totalTokensUsed?: number
   difficultyLevel?: number
 }
@@ -220,6 +228,7 @@ type SubmitAnswerResponse = {
   status: 'active' | 'completed'
   answers: AnswerState[]
   questions: Question[]
+  completedAt?: string
   totalTokensUsed?: number
   difficultyLevel?: number
   adaptiveNotification?: AdaptiveNotification | null
@@ -239,6 +248,7 @@ type RevealResponse = {
   status: 'active' | 'completed'
   answers: AnswerState[]
   questions: Question[]
+  completedAt?: string
   difficultyLevel?: number
   adaptiveNotification?: AdaptiveNotification | null
 }
@@ -336,6 +346,17 @@ function formatRelativeTime(isoDate: string): string {
   return `${diffDays}d ago`
 }
 
+function formatScoreTimestamp(isoDate?: string): string {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 function getSubjectTrendMeta(trend: SubjectInsight['trend']): { label: string; icon: string } {
   if (trend === 'improving') {
     return { label: 'Improving', icon: '↗' }
@@ -343,7 +364,7 @@ function getSubjectTrendMeta(trend: SubjectInsight['trend']): { label: string; i
   if (trend === 'declining') {
     return { label: 'Declining', icon: '↘' }
   }
-  return { label: 'Steady', icon: '•' }
+  return { label: 'Steady', icon: '' }
 }
 
 function getMasteryStageMeta(stage: MasteryStage): { label: string; className: string } {
@@ -725,6 +746,7 @@ function App() {
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
   const [launchState, setLaunchState] = useState<LaunchState>(null)
   const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
+  const [summaryCompletedAt, setSummaryCompletedAt] = useState<string | null>(null)
   const [sessionModePreferences, setSessionModePreferences] = useState<Record<Subject, SessionMode>>({
     Multiplication: 'guided',
     Division: 'guided',
@@ -1124,6 +1146,7 @@ function App() {
       setHelpSource(null)
       setInputState('idle')
       setShowExitConfirm(false)
+      setSummaryCompletedAt(null)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
       if (subject === 'Reading') {
         const introTitle = data.questions[0]?.title ?? ''
@@ -1156,6 +1179,7 @@ function App() {
         currentIndex: number
         questions: Question[]
         answers: AnswerState[]
+        completedAt?: string
         totalTokensUsed?: number
         difficultyLevel?: number
       }
@@ -1176,12 +1200,61 @@ function App() {
       setInputState('idle')
       setShowExitConfirm(false)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setSummaryCompletedAt(data.completedAt ?? null)
       setReadingSessionIntroTitle('')
       setStage('session')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Resume failed')
     } finally {
       setLaunchState(null)
+      setIsBusy(false)
+    }
+  }
+
+  const viewSavedScorePage = async (savedSessionId: string): Promise<void> => {
+    setError('')
+    setIsBusy(true)
+    try {
+      const res = await apiFetch(`/session/${selectedUserId}/${savedSessionId}`)
+      if (!res.ok) throw new Error('Failed to load saved score page')
+      const data = (await res.json()) as {
+        sessionId: string
+        subject: Subject
+        sessionMode: SessionMode
+        status: 'active' | 'completed'
+        currentIndex: number
+        questions: Question[]
+        answers: AnswerState[]
+        completedAt?: string
+        totalTokensUsed?: number
+        difficultyLevel?: number
+      }
+      if (data.status !== 'completed') {
+        throw new Error('This session is not completed yet.')
+      }
+      setSessionId(data.sessionId)
+      setSessionSubject(data.subject)
+      setSessionMode(data.sessionMode)
+      setDifficultyLevel(data.difficultyLevel ?? 3)
+      setQuestions(data.questions)
+      setAnswers(data.answers)
+      setCurrentIndex(data.currentIndex)
+      setViewIndex(data.currentIndex)
+      setAnswerInput('')
+      setReadingQuizAnswers([])
+      setHintSteps([])
+      setFeedback('')
+      setIsCorrect(null)
+      setHelpSource(null)
+      setInputState('idle')
+      setShowExitConfirm(false)
+      setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setSummaryCompletedAt(data.completedAt ?? null)
+      setReadingSessionIntroTitle('')
+      setStage('summary')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the saved score page')
+    } finally {
       setIsBusy(false)
     }
   }
@@ -1201,6 +1274,7 @@ function App() {
       }
     }
     setShowExitConfirm(false)
+    setSummaryCompletedAt(null)
     // Refresh dashboard to show in-progress session
     await Promise.all([
       computeDashStats(selectedUserId),
@@ -1218,6 +1292,12 @@ function App() {
     }
     setLaunchState({ subject, mode: 'start' })
     void startSession(subject, sessionModePreferences[subject])
+  }
+
+  const openLastScorePage = (subject: Subject): void => {
+    const lastCompletedSession = dashStats?.latestCompletedBySubject?.[subject]
+    if (!lastCompletedSession) return
+    void viewSavedScorePage(lastCompletedSession.sessionId)
   }
 
   /* ── Fetch Help ─────────────────────────────────────────── */
@@ -1344,6 +1424,7 @@ function App() {
       setQuestions(payload.questions)
       setCurrentIndex(payload.currentIndex)
       setIsCorrect(payload.isCorrect)
+      if (payload.completedAt !== undefined) setSummaryCompletedAt(payload.completedAt)
       if (payload.totalTokensUsed !== undefined) setTotalTokensUsed(payload.totalTokensUsed)
       if (payload.difficultyLevel !== undefined) setDifficultyLevel(payload.difficultyLevel)
       showAdaptivePopup(payload.adaptiveNotification)
@@ -1410,6 +1491,7 @@ function App() {
       setQuestions(data.questions)
       setCurrentIndex(data.currentIndex)
       setIsCorrect(false)
+      if (data.completedAt !== undefined) setSummaryCompletedAt(data.completedAt)
       setFeedback(`The answer is ${data.correctAnswer}. ${data.explanation}`)
       setInputState('incorrect')
       setHintSteps([])
@@ -1753,6 +1835,7 @@ function App() {
             <div className="subjects-grid">
               {ACTIVE_SUBJECTS.map((subject) => {
                 const latestInProgressSession = latestInProgressBySubject[subject.id]
+                const lastCompletedSession = dashStats?.latestCompletedBySubject?.[subject.id]
                 const unfinishedForSubject = inProgressSessions.filter((session) => session.subject === subject.id)
                 const isLaunchingThisSubject = launchState?.subject === subject.id
                 const isBlockingHomeLaunch = isBusy && launchState !== null
@@ -1802,6 +1885,17 @@ function App() {
                           </div>
                         </div>
                       </div>
+                    )}
+                    {lastCompletedSession && (
+                      <button
+                        type="button"
+                        className="subject-score-link"
+                        onClick={() => openLastScorePage(subject.id)}
+                        disabled={isBusy}
+                      >
+                        <span>Last score page</span>
+                        <span>{formatRelativeTime(lastCompletedSession.completedAt)}</span>
+                      </button>
                     )}
                     <button
                       className={`btn-start-subject ${isBlockingHomeLaunch && !isLaunchingThisSubject ? 'quiet-disabled' : ''}`}
@@ -2460,6 +2554,7 @@ function App() {
           <div className="summary-hero">
             <span className="summary-trophy">📖</span>
             <h2>Reading Session Complete!</h2>
+            {summaryCompletedAt && <p className="summary-timestamp">Saved score · {formatScoreTimestamp(summaryCompletedAt)}</p>}
             <p>
               {readingSummary.assessmentMode === 'quiz'
                 ? 'You finished the story and completed a comprehension check.'
@@ -2546,6 +2641,7 @@ function App() {
         <div className="summary-hero">
           <span className="summary-trophy">{trophy}</span>
           <h2>Session Complete!</h2>
+          {summaryCompletedAt && <p className="summary-timestamp">Saved score · {formatScoreTimestamp(summaryCompletedAt)}</p>}
           <p>{message}</p>
           {hitTarget && (
             <div className="summary-target-badge">🎯 Target Achieved! ({SESSION_TARGET_ACCURACY}%+)</div>

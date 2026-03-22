@@ -1161,9 +1161,9 @@
 }
 
 .subject-insight-trend.trend-steady {
-  color: var(--color-text-primary);
-  background: rgba(31, 36, 55, 0.06);
-  border-color: rgba(31, 36, 55, 0.08);
+  color: #a16207;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.22);
 }
 
 .subject-insight-metrics {
@@ -1543,6 +1543,37 @@
   min-height: 36px;
 }
 
+.subject-score-link {
+  width: 100%;
+  border: 1px solid rgba(28, 176, 246, 0.18);
+  background: linear-gradient(180deg, rgba(238, 248, 255, 0.96) 0%, rgba(226, 244, 255, 0.96) 100%);
+  border-radius: 14px;
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 800;
+  color: #0a6fa0;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.subject-score-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(28, 176, 246, 0.3);
+  box-shadow: 0 10px 20px rgba(28, 176, 246, 0.12);
+}
+
+.subject-score-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: none;
+}
+
 .subject-badge {
   position: absolute;
   top: 12px;
@@ -1604,6 +1635,13 @@
   box-shadow: 0 4px 0 #3a8a00;
   color: rgba(255, 255, 255, 0.82);
   opacity: 0.72;
+}
+
+.summary-timestamp {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text-secondary);
 }
 
 .reading-launch-banner {
