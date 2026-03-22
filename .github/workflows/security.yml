@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -34,21 +34,18 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      - name: Install dependencies
+      - name: Run dependency audit from lockfiles
         run: |
-          npm ci --prefer-offline --no-audit
-          npm --prefix client ci --prefer-offline --no-audit
-          npm --prefix server ci --prefer-offline --no-audit
-
-      - name: Run dependency audit
-        run: npm run audit
+          npm audit --package-lock-only --audit-level=high --omit=dev
+          npm --prefix client audit --package-lock-only --audit-level=high --omit=dev
+          npm --prefix server audit --package-lock-only --audit-level=high --omit=dev
 
   repo-scan:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
