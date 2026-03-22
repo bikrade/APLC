@@ -49,6 +49,9 @@ jobs:
       - name: Build and test
         run: npm run build && npm run test
 
+      - name: Validate production Docker image
+        run: docker build -t aplc-ci .
+
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

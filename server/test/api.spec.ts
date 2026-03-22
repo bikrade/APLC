@@ -16,6 +16,7 @@ afterEach(async () => {
     await cleanupCurrent()
     cleanupCurrent = null
   }
+  vi.useRealTimers()
   vi.resetModules()
 })
 
@@ -516,10 +517,10 @@ describe('APLC backend', () => {
     })
 
     // Sessions on 3 different days
-    await writeSession(ctx.dataRoot, makeSession('20260315-100000-Multiplication', '2026-03-15T10:00:00.000Z', 'completed'))
-    await writeSession(ctx.dataRoot, makeSession('20260320-170000-Multiplication', '2026-03-20T17:00:00.000Z', 'completed'))
-    await writeSession(ctx.dataRoot, makeSession('20260320-180000-Multiplication', '2026-03-20T18:00:00.000Z', 'completed'))
-    await writeSession(ctx.dataRoot, makeSession('20260321-140000-Multiplication', '2026-03-21T14:00:00.000Z', 'active'))
+    await writeSession(ctx.dataRoot, makeSession('20260315-100000-Multiplication', '2026-03-15T01:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260320-170000-Multiplication', '2026-03-20T02:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260320-180000-Multiplication', '2026-03-20T03:00:00.000Z', 'completed'))
+    await writeSession(ctx.dataRoot, makeSession('20260321-140000-Multiplication', '2026-03-21T04:00:00.000Z', 'active'))
 
     const res = await request(ctx.app).get('/dashboard/adi')
     expect(res.status).toBe(200)
@@ -538,16 +539,10 @@ describe('APLC backend', () => {
   })
 
   test('dashboard returns today and yesterday practice time against the daily target', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-23T02:00:00.000Z'))
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
-
-    const now = new Date()
-    const isoDaysAgo = (daysAgo: number, hour: number) => {
-      const date = new Date(now)
-      date.setUTCDate(date.getUTCDate() - daysAgo)
-      date.setUTCHours(hour, 0, 0, 0)
-      return date.toISOString()
-    }
 
     const makeSession = (id: string, startedAt: string, elapsedMs: number): SessionRecord => ({
       id,
@@ -579,9 +574,9 @@ describe('APLC backend', () => {
       totalTokensUsed: 0,
     })
 
-    await writeSession(ctx.dataRoot, makeSession('20260322-090000-Multiplication', isoDaysAgo(0, 9), 25 * 60 * 1000))
-    await writeSession(ctx.dataRoot, makeSession('20260322-150000-Multiplication', isoDaysAgo(0, 15), 20 * 60 * 1000))
-    await writeSession(ctx.dataRoot, makeSession('20260321-110000-Multiplication', isoDaysAgo(1, 11), 35 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260322-173000-Multiplication', '2026-03-22T17:30:00.000Z', 25 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260323-010000-Multiplication', '2026-03-23T01:00:00.000Z', 20 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260322-010000-Multiplication', '2026-03-22T01:00:00.000Z', 35 * 60 * 1000))
 
     const res = await request(ctx.app).get('/dashboard/adi')
 
@@ -591,6 +586,55 @@ describe('APLC backend', () => {
       todayMs: 45 * 60 * 1000,
       yesterdayMs: 35 * 60 * 1000,
     })
+  })
+
+  test('dashboard trend uses the newest sessions as recent history', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const makeSession = (id: string, startedAt: string, correctCount: number): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Multiplication',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 5,
+      questions: Array.from({ length: 5 }, (_, index) => ({
+        id: `${id}-q-${index}`,
+        prompt: `Question ${index + 1}`,
+        type: 'decimal',
+        kind: 'math',
+        answer: 1,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      })),
+      answers: Array.from({ length: 5 }, (_, index) => ({
+        questionId: `${id}-q-${index}`,
+        questionIndex: index,
+        completed: true,
+        usedHelp: false,
+        usedReveal: false,
+        elapsedMs: 60000,
+        isCorrect: index < correctCount,
+      })),
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeSession('20260318-090000-Multiplication', '2026-03-18T09:00:00.000Z', 2))
+    await writeSession(ctx.dataRoot, makeSession('20260319-090000-Multiplication', '2026-03-19T09:00:00.000Z', 3))
+    await writeSession(ctx.dataRoot, makeSession('20260320-090000-Multiplication', '2026-03-20T09:00:00.000Z', 4))
+    await writeSession(ctx.dataRoot, makeSession('20260321-090000-Multiplication', '2026-03-21T09:00:00.000Z', 5))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.progressInsights).toEqual(expect.objectContaining({
+      trend: 'improving',
+      recentAccuracy: 80,
+    }))
   })
 
   test('dashboard returns learning coach guidance with missions, mastery, revisit queue, and parent review', async () => {

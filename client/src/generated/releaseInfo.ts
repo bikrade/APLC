@@ -1,30 +1,30 @@
 export const releaseInfo = {
-  "version": "0.6.1",
+  "version": "0.6.5",
   "channel": "beta",
-  "displayLabel": "v0.6.1 beta",
-  "shortSha": "596beda",
+  "displayLabel": "v0.6.5 beta",
+  "shortSha": "d01d563",
   "releaseDate": "2026-03-22",
-  "headline": "Refine dashboard UX and fix security workflow",
+  "headline": "Update reading pace benchmark and coaching",
   "changes": [
     {
-      "sha": "596beda",
+      "sha": "d01d563",
       "date": "2026-03-22",
-      "summary": "Refine dashboard UX and fix security workflow"
+      "summary": "Update reading pace benchmark and coaching"
     },
     {
-      "sha": "646b15a",
+      "sha": "a1f9e26",
       "date": "2026-03-22",
-      "summary": "Add adaptive session modes and fix CI deploy"
+      "summary": "Remove progress insights banner"
     },
     {
-      "sha": "755eba2",
+      "sha": "3b1aa06",
       "date": "2026-03-22",
-      "summary": "Add learning coach and release badge"
+      "summary": "Simplify dashboard coaching UI and sync docs"
     },
     {
-      "sha": "be067d3",
+      "sha": "491ce48",
       "date": "2026-03-22",
-      "summary": "Deepen adaptive reading experience"
+      "summary": "Refine Adi coaching, assessment, and dashboard flow"
     }
   ]
 } as const
