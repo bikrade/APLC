@@ -32,6 +32,7 @@
   - `userId: string` (ignored when Google auth is active; derived from token)
   - `questionCount?: number (10-15 clamped; ignored for Reading)`
   - `subject?: string ('Multiplication' | 'Division' | 'Reading', default 'Multiplication')`
+  - `sessionMode?: 'guided' | 'quiz'` (default `guided`)
 - `POST /session/:userId/:sessionId/answer`
   - `questionIndex: number`
   - `answer: string | number` (number or fraction string for math; text summary for reading summary mode)
@@ -54,8 +55,9 @@
 - `GET /config/auth` -> `{ googleConfigured: boolean, googleClientId: string | null }`
 - `POST /auth/google` -> `{ token, user: { email, name, picture?, userId } }`
 - `GET /auth/session` -> `{ user: { email, name, picture?, userId } }`
-- `GET /dashboard/:userId` -> `{ totalSessions, overallAccuracy, avgTimePerQuestion, currentStreak, activityDays[], progressInsights?, learningCoach }`
+- `GET /dashboard/:userId` -> `{ totalSessions, overallAccuracy, avgTimePerQuestion, currentStreak, activityDays[], progressInsights?, dailyPractice, learningCoach }`
   - `progressInsights`: `{ trend: 'improving'|'declining'|'steady'|'new', trendLabel, recentAccuracy, bestAccuracy, totalQuestionsAnswered, message }` (only present when ≥1 completed session exists)
+  - `dailyPractice`: `{ targetMs, todayMs, yesterdayMs }`
   - `learningCoach`: landing-page coaching payload assembled from completed history
     - `weeklyMission`: `{ title, subtitle, items[] }`
     - `weeklyMission.items[]`: `{ id, label, detail, status: 'done'|'in-progress'|'up-next' }`
@@ -64,14 +66,15 @@
     - `masteryBySubject[].skills[]`: `{ key, label, stage, accuracy, evidenceCount }`
     - `revisitQueue[]`: `{ subject, skill, reason, action }`
     - `parentReview`: `{ celebration[], watchlist[], supportMoves[] }`
-- `GET /sessions/in-progress/:userId` -> `{ sessions: [{ sessionId, startedAt, questionsAnswered, totalQuestions, accuracy, subject }] }`
+- `GET /sessions/in-progress/:userId` -> `{ sessions: [{ sessionId, startedAt, questionsAnswered, totalQuestions, accuracy, subject, sessionMode }] }`
 - `GET /insights/:userId` -> `{ hasEnoughData, message, strengths[], improvements[], recommendedFocus[], bySubject[], overall }`
   - `overall`: `{ completedSessions, totalQuestionsAnswered, strongestSubject, needsAttentionSubject, subjectSessionBreakdown }`
-- `POST /session/start` -> `{ sessionId, subject, questionCount, questions[], answers[], currentIndex, totalTokensUsed, difficultyLevel }`
-- `GET /session/:userId/:sessionId` -> `{ sessionId, subject, status, currentIndex, questions[], answers[], totalTokensUsed, difficultyLevel }`
+- `POST /session/start` -> `{ sessionId, subject, questionCount, questions[], answers[], currentIndex, totalTokensUsed, difficultyLevel, sessionMode }`
+- `GET /session/:userId/:sessionId` -> `{ sessionId, subject, status, currentIndex, questions[], answers[], totalTokensUsed, difficultyLevel, sessionMode }`
 - `POST /answer` -> `{ isCorrect, explanation, currentIndex, status, answers[], questions[], totalTokensUsed, difficultyLevel?, adaptiveNotification? }`
+  - In `quiz` mode for math, wrong answers are recorded and the session advances immediately without showing instant right/wrong confirmation; the learner reviews results at the end of the session.
 - `POST /help` -> `{ helpSteps[], helpSource, totalTokensUsed }`
-- `POST /reveal` -> `{ correctAnswer, explanation, currentIndex, answers[], questions[], difficultyLevel?, adaptiveNotification? }`
+- `POST /reveal` -> `{ correctAnswer, explanation, currentIndex, status, answers[], questions[], difficultyLevel?, adaptiveNotification? }`
 - `POST /pause` -> `{ ok, answers[] }`
 
 ## Error Models

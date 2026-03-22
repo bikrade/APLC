@@ -30,6 +30,7 @@ type Stage = 'login' | 'home' | 'session' | 'summary'
 type User = { id: string; name: string }
 type AuthUser = { email: string; name: string; picture?: string; userId: string }
 type Subject = 'Multiplication' | 'Division' | 'Reading'
+type SessionMode = 'guided' | 'quiz'
 type AuthConfig = { googleConfigured: boolean; googleClientId?: string | null }
 type LaunchState = { subject: Subject; mode: 'start' | 'resume' } | null
 
@@ -73,6 +74,11 @@ type DashboardStats = {
   avgTimePerQuestion: number
   currentStreak: number
   activityDays: string[]
+  dailyPractice?: {
+    targetMs: number
+    todayMs: number
+    yesterdayMs: number
+  }
   progressInsights?: ProgressInsights
   learningCoach?: LearningCoach
 }
@@ -149,6 +155,7 @@ type InProgressSession = {
   totalQuestions: number
   accuracy: number
   subject: Subject
+  sessionMode: SessionMode
 }
 
 type AdaptiveNotification = {
@@ -197,6 +204,7 @@ type AnswerState = {
 type StartSessionResponse = {
   sessionId: string
   subject: Subject
+  sessionMode: SessionMode
   questionCount: number
   questions: Question[]
   answers: AnswerState[]
@@ -222,6 +230,17 @@ type HelpResponse = {
   helpSource?: 'openai' | 'rule-based'
   totalTokensUsed?: number
   difficultyLevel?: number
+}
+
+type RevealResponse = {
+  correctAnswer: number
+  explanation: string
+  currentIndex: number
+  status: 'active' | 'completed'
+  answers: AnswerState[]
+  questions: Question[]
+  difficultyLevel?: number
+  adaptiveNotification?: AdaptiveNotification | null
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
@@ -337,6 +356,27 @@ function getMasteryStageMeta(stage: MasteryStage): { label: string; className: s
   if (stage === 'mastered') return { label: 'Mastered', className: 'mastered' }
   if (stage === 'fragile') return { label: 'Fragile', className: 'fragile' }
   return { label: 'Developing', className: 'developing' }
+}
+
+function getSessionModeMeta(mode: SessionMode): { label: string; shortLabel: string; description: string } {
+  if (mode === 'quiz') {
+    return {
+      label: 'Quiz',
+      shortLabel: 'Quiz',
+      description: 'No instant right-or-wrong feedback. See the results at the end.',
+    }
+  }
+  return {
+    label: 'Guided Session',
+    shortLabel: 'Guided',
+    description: 'Live feedback, adaptive coaching, and support as you go.',
+  }
+}
+
+function formatPracticeMinutes(ms: number): string {
+  if (ms <= 0) return '0 min'
+  const minutes = Math.round(ms / 60000)
+  return `${minutes} min`
 }
 
 function getSessionCoachSummary(
@@ -614,6 +654,7 @@ function App() {
   const [inProgressSessions, setInProgressSessions] = useState<InProgressSession[]>([])
   const [sessionId, setSessionId] = useState('')
   const [sessionSubject, setSessionSubject] = useState<Subject>('Multiplication')
+  const [sessionMode, setSessionMode] = useState<SessionMode>('guided')
   const [difficultyLevel, setDifficultyLevel] = useState(3)
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<AnswerState[]>([])
@@ -642,6 +683,11 @@ function App() {
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
   const [launchState, setLaunchState] = useState<LaunchState>(null)
   const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
+  const [sessionModePreferences, setSessionModePreferences] = useState<Record<Subject, SessionMode>>({
+    Multiplication: 'guided',
+    Division: 'guided',
+    Reading: 'guided',
+  })
   const answerInputRef = useRef<HTMLInputElement>(null)
   const answerTextareaRef = useRef<HTMLTextAreaElement>(null)
   const isGoogleAuthEnabled = Boolean(googleClientId)
@@ -1009,19 +1055,20 @@ function App() {
   }
 
   /* ── Start Session ──────────────────────────────────────────── */
-  const startSession = async (subject: Subject): Promise<void> => {
+  const startSession = async (subject: Subject, mode: SessionMode): Promise<void> => {
     setError('')
     setIsBusy(true)
     try {
       const res = await apiFetch('/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: selectedUserId, questionCount: 12, subject }),
+        body: JSON.stringify({ userId: selectedUserId, questionCount: 12, subject, sessionMode: mode }),
       })
       if (!res.ok) throw new Error('Failed to start session')
       const data = (await res.json()) as StartSessionResponse
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
+      setSessionMode(data.sessionMode)
       setDifficultyLevel(data.difficultyLevel ?? 3)
       setQuestions(data.questions)
       setAnswers(data.answers)
@@ -1062,6 +1109,7 @@ function App() {
       const data = (await res.json()) as {
         sessionId: string
         subject: Subject
+        sessionMode: SessionMode
         status: string
         currentIndex: number
         questions: Question[]
@@ -1071,6 +1119,7 @@ function App() {
       }
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
+      setSessionMode(data.sessionMode)
       setDifficultyLevel(data.difficultyLevel ?? 3)
       setQuestions(data.questions)
       setAnswers(data.answers)
@@ -1126,7 +1175,7 @@ function App() {
       return
     }
     setLaunchState({ subject, mode: 'start' })
-    void startSession(subject)
+    void startSession(subject, sessionModePreferences[subject])
   }
 
   /* ── Fetch Help ─────────────────────────────────────────── */
@@ -1204,6 +1253,30 @@ function App() {
     window.setTimeout(() => setAdaptivePopup(null), notification.kind === 'reading-warning' ? 3200 : 2800)
   }, [])
 
+  const advanceQuizFlow = useCallback((nextIndex: number, status: 'active' | 'completed', delayMs = 0) => {
+    const advance = () => {
+      setFeedback('')
+      setIsCorrect(null)
+      setAnswerInput('')
+      setReadingQuizAnswers([])
+      setInputState('idle')
+      setHintSteps([])
+      setPausedElapsed(0)
+      setQuestionStartedAt(Date.now())
+      if (status === 'completed') {
+        setStage('summary')
+      } else {
+        setViewIndex(nextIndex)
+      }
+    }
+
+    if (delayMs > 0) {
+      window.setTimeout(advance, delayMs)
+      return
+    }
+    advance()
+  }, [])
+
   /* ── Submit Answer ──────────────────────────────────────────── */
   const submitAnswer = async (): Promise<void> => {
     if (!sessionId || viewIndex !== currentIndex) return
@@ -1249,6 +1322,8 @@ function App() {
         setIsCorrect(null)
         setHintSteps([])
         setInputState('idle')
+      } else if (sessionMode === 'quiz') {
+        advanceQuizFlow(payload.currentIndex, payload.status)
       } else if (payload.isCorrect) {
         setInputState('correct')
         setFeedback(payload.explanation)
@@ -1263,7 +1338,11 @@ function App() {
 
       setHintSteps([])
       if (payload.status === 'completed') {
-        setTimeout(() => setStage('summary'), isReadingSession ? 150 : payload.isCorrect ? 2500 : 500)
+        if (isReadingSession) {
+          setTimeout(() => setStage('summary'), 150)
+        } else if (sessionMode !== 'quiz') {
+          setTimeout(() => setStage('summary'), payload.isCorrect ? 2500 : 500)
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Submit failed')
@@ -1284,15 +1363,7 @@ function App() {
         body: JSON.stringify({ questionIndex: viewIndex, elapsedMs }),
       })
       if (!res.ok) throw new Error('Failed to reveal answer')
-      const data = (await res.json()) as {
-        correctAnswer: number
-        explanation: string
-        currentIndex: number
-        answers: AnswerState[]
-        questions: Question[]
-        difficultyLevel?: number
-        adaptiveNotification?: AdaptiveNotification | null
-      }
+      const data = (await res.json()) as RevealResponse
       setAnswers(data.answers)
       setQuestions(data.questions)
       setCurrentIndex(data.currentIndex)
@@ -1302,6 +1373,9 @@ function App() {
       setHintSteps([])
       if (data.difficultyLevel !== undefined) setDifficultyLevel(data.difficultyLevel)
       showAdaptivePopup(data.adaptiveNotification)
+      if (sessionMode === 'quiz') {
+        advanceQuizFlow(data.currentIndex, data.status, 1800)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Reveal failed')
     } finally {
@@ -1503,6 +1577,10 @@ function App() {
     const readingLaunchInProgress = launchState?.subject === 'Reading' && launchState.mode === 'start'
     const learningCoach = dashStats?.learningCoach
     const progressInsights = dashStats?.progressInsights
+    const dailyPractice = dashStats?.dailyPractice
+    const dailyTargetMs = dailyPractice?.targetMs ?? 60 * 60 * 1000
+    const todayProgress = Math.min(100, Math.round(((dailyPractice?.todayMs ?? 0) / dailyTargetMs) * 100))
+    const yesterdayProgress = Math.min(100, Math.round(((dailyPractice?.yesterdayMs ?? 0) / dailyTargetMs) * 100))
 
     return (
       <div className="dashboard-screen">
@@ -1581,6 +1659,40 @@ function App() {
             </div>
           )}
 
+          {dailyPractice && (
+            <div className="daily-practice-panel">
+              <div className="daily-practice-header">
+                <div>
+                  <p className="daily-practice-kicker">Daily Practice Goal</p>
+                  <h3 className="panel-title">⏳ 60 minutes a day</h3>
+                </div>
+                <p className="daily-practice-summary">
+                  Today: {formatPracticeMinutes(dailyPractice.todayMs)} · Yesterday: {formatPracticeMinutes(dailyPractice.yesterdayMs)}
+                </p>
+              </div>
+              <div className="daily-practice-bars">
+                <div className="daily-practice-row">
+                  <div className="daily-practice-labels">
+                    <span>Today so far</span>
+                    <span>{formatPracticeMinutes(dailyPractice.todayMs)}</span>
+                  </div>
+                  <div className="daily-practice-track">
+                    <div className="daily-practice-fill today" style={{ width: `${todayProgress}%` }} />
+                  </div>
+                </div>
+                <div className="daily-practice-row">
+                  <div className="daily-practice-labels">
+                    <span>Yesterday</span>
+                    <span>{formatPracticeMinutes(dailyPractice.yesterdayMs)}</span>
+                  </div>
+                  <div className="daily-practice-track">
+                    <div className="daily-practice-fill yesterday" style={{ width: `${yesterdayProgress}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {learningCoach && (
             <div className="coach-grid">
               <div className="coach-panel coach-mission-panel">
@@ -1641,6 +1753,22 @@ function App() {
                     <div className={`subject-card-icon ${subject.iconClass}`}>{subject.icon}</div>
                     <p className="subject-card-name">{subject.id}</p>
                     <p className="subject-card-desc">{subject.description}</p>
+                    <div className="session-mode-picker">
+                      <p className="session-mode-picker-title">Session Mode</p>
+                      <div className="session-mode-options">
+                        {(['guided', 'quiz'] as SessionMode[]).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            className={`session-mode-option ${sessionModePreferences[subject.id] === mode ? 'selected' : ''}`}
+                            onClick={() => setSessionModePreferences((current) => ({ ...current, [subject.id]: mode }))}
+                          >
+                            <span>{getSessionModeMeta(mode).shortLabel}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="session-mode-picker-copy">{getSessionModeMeta(sessionModePreferences[subject.id]).description}</p>
+                    </div>
                     {latestInProgressSession && (
                       <div className="subject-session-stack">
                         <div className="subject-session-stack-title">Session In Progress</div>
@@ -1648,6 +1776,7 @@ function App() {
                           <div className="subject-session-copy">
                             <p className="subject-session-title">{subject.id}</p>
                             <p className="subject-session-meta">
+                              {getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} · {' '}
                               Pick up from question {latestInProgressSession.questionsAnswered + 1} of {latestInProgressSession.totalQuestions}
                               {latestInProgressSession.accuracy > 0 && ` · ${latestInProgressSession.accuracy}% accuracy`}
                               {' · '}{formatRelativeTime(latestInProgressSession.startedAt)}
@@ -1679,7 +1808,9 @@ function App() {
                         </>
                       ) : isBusy ? (
                         <span className="loading-dots"><span /><span /><span /></span>
-                      ) : latestInProgressSession ? 'Continue Session →' : 'Start Session →'}
+                      ) : latestInProgressSession
+                        ? `Continue ${getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} →`
+                        : `Start ${getSessionModeMeta(sessionModePreferences[subject.id]).shortLabel} →`}
                     </button>
                   </div>
                 )
@@ -1965,6 +2096,9 @@ function App() {
               Question {viewIndex + 1} of {questions.length}
             </span>
             <div className="question-badge-row">
+              <div className={`question-type-badge mode-${sessionMode}`}>
+                {getSessionModeMeta(sessionMode).shortLabel}
+              </div>
               {!isReadingSession && (
                 <div className="question-difficulty-chip">
                   Adaptive Level {difficultyLevel}/5
@@ -2160,7 +2294,17 @@ function App() {
                   onClick={() => void submitAnswer()}
                   disabled={isBusy || (!isReadingPage && !isReadingQuiz && !answerInput.trim()) || (isReadingQuiz && readingQuizAnswers.some((value) => value < 0))}
                 >
-                  {isBusy ? <span className="loading-dots"><span /><span /><span /></span> : isReadingPage ? 'Next Page →' : isReadingSummary ? 'Submit Summary' : isReadingQuiz ? 'Submit Quiz' : 'Check Answer'}
+                  {isBusy
+                    ? <span className="loading-dots"><span /><span /><span /></span>
+                    : isReadingPage
+                      ? 'Next Page →'
+                      : isReadingSummary
+                        ? 'Submit Summary'
+                        : isReadingQuiz
+                          ? 'Submit Quiz'
+                          : sessionMode === 'quiz'
+                            ? 'Submit & Next →'
+                            : 'Check Answer'}
                 </button>
                 {!isReadingSession && (
                   <>
@@ -2204,22 +2348,26 @@ function App() {
             <div className={`feedback-banner ${isCorrect ? 'correct' : 'incorrect'}`}>
               <div className="feedback-header">
                 <div className="feedback-icon-wrap">
-                  {isCorrect ? '✓' : '✗'}
+                  {sessionMode === 'quiz' ? '👁️' : isCorrect ? '✓' : '✗'}
                 </div>
                 <p className="feedback-title">
-                  {isCorrect ? 'Correct! Well done! 🎉' : 'Not quite right — keep going! 💪'}
+                  {sessionMode === 'quiz'
+                    ? 'Answer shown — keep moving through the quiz.'
+                    : isCorrect
+                      ? 'Correct! Well done! 🎉'
+                      : 'Not quite right — keep going! 💪'}
                 </p>
               </div>
               <div className="feedback-message">
                 <MathText text={feedback} />
               </div>
               <div className="feedback-actions">
-                {!isCorrect && isCurrentQuestion && (
+                {!isCorrect && isCurrentQuestion && sessionMode !== 'quiz' && (
                   <button className="btn-retry" onClick={retryQuestion}>
                     Retry
                   </button>
                 )}
-                {canContinueAfterFeedback && (
+                {canContinueAfterFeedback && sessionMode !== 'quiz' && (
                   <button className="btn-continue" onClick={continueToNext}>
                     {isCorrect ? 'Continue →' : 'See Next Question →'}
                   </button>
@@ -2301,6 +2449,7 @@ function App() {
                 : 'You finished the story and reflected on its core meaning.'}
             </p>
             <div className="summary-target-badge">
+              {getSessionModeMeta(sessionMode).shortLabel} · {' '}
               {targetHit
                 ? `On target at ${readingSummary.averageWpm} WPM`
                 : readingSummary.averageWpm > 190
@@ -2362,7 +2511,7 @@ function App() {
             }}>
               🏠 Home
             </button>
-            <button className="btn-again" onClick={() => void startSession(sessionSubject)}>
+            <button className="btn-again" onClick={() => void startSession(sessionSubject, sessionMode)}>
               {isBusy ? <span className="loading-dots"><span /><span /><span /></span> : '🔄 Read Again'}
             </button>
           </div>
@@ -2384,6 +2533,7 @@ function App() {
           {hitTarget && (
             <div className="summary-target-badge">🎯 Target Achieved! ({SESSION_TARGET_ACCURACY}%+)</div>
           )}
+          <div className="summary-target-badge subtle">{getSessionModeMeta(sessionMode).label}</div>
         </div>
 
         <div className="summary-stats">
@@ -2426,6 +2576,39 @@ function App() {
           </div>
         </div>
 
+        {sessionMode === 'quiz' && (
+          <div className="quiz-results-panel">
+            <h3 className="panel-title">📝 Quiz Review</h3>
+            <div className="quiz-results-list">
+              {questions.map((question, index) => {
+                const answer = answers[index]
+                const answerLabel = answer?.usedReveal
+                  ? 'Answer shown'
+                  : answer?.isCorrect
+                    ? 'Correct'
+                    : 'Incorrect'
+                return (
+                  <div key={question.id} className="quiz-result-card">
+                    <div className="quiz-result-header">
+                      <span className="quiz-result-number">Q{index + 1}</span>
+                      <span className={`quiz-result-status ${answer?.usedReveal ? 'revealed' : answer?.isCorrect ? 'correct' : 'incorrect'}`}>
+                        {answerLabel}
+                      </span>
+                    </div>
+                    <div className="quiz-result-prompt">
+                      <MathText text={question.prompt} />
+                    </div>
+                    <p className="quiz-result-meta">
+                      Your answer: {answer?.userAnswer !== undefined ? String(answer.userAnswer) : answer?.usedReveal ? 'Answer was shown during the quiz' : 'Not submitted'}
+                      {!answer?.isCorrect && !answer?.usedReveal && ' · Review this one again in the next guided session.'}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="summary-actions">
           <button className="btn-home" onClick={() => {
             void computeDashStats(selectedUserId)
@@ -2434,7 +2617,7 @@ function App() {
           }}>
             🏠 Home
           </button>
-          <button className="btn-again" onClick={() => void startSession(sessionSubject)}>
+          <button className="btn-again" onClick={() => void startSession(sessionSubject, sessionMode)}>
             {isBusy ? <span className="loading-dots"><span /><span /><span /></span> : '🔄 Practice Again'}
           </button>
         </div>

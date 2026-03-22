@@ -128,6 +128,31 @@ describe('APLC backend', () => {
     expect(correct.body.answers[0].completed).toBe(true)
   })
 
+  test('quiz mode records wrong answers and advances without requiring a retry', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const start = await request(ctx.app).post('/session/start').send({
+      userId: 'adi',
+      subject: 'Multiplication',
+      sessionMode: 'quiz',
+    })
+    const sessionId = start.body.sessionId as string
+
+    expect(start.status).toBe(200)
+    expect(start.body.sessionMode).toBe('quiz')
+
+    const wrong = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 0, answer: '9999', elapsedMs: 18000 })
+
+    expect(wrong.status).toBe(200)
+    expect(wrong.body.isCorrect).toBe(false)
+    expect(wrong.body.currentIndex).toBe(1)
+    expect(wrong.body.answers[0].completed).toBe(true)
+    expect(wrong.body.answers[0].isCorrect).toBe(false)
+  })
+
   test('rejects invalid route ids before file access', async () => {
     const ctx = await setupTestApp({ googleAuth: true })
     cleanupCurrent = ctx.cleanup
@@ -511,6 +536,62 @@ describe('APLC backend', () => {
     // Stats from 3 completed sessions only
     expect(res.body.totalSessions).toBe(4)
     expect(res.body.overallAccuracy).toBe(100)
+  })
+
+  test('dashboard returns today and yesterday practice time against the daily target', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const now = new Date()
+    const isoDaysAgo = (daysAgo: number, hour: number) => {
+      const date = new Date(now)
+      date.setUTCDate(date.getUTCDate() - daysAgo)
+      date.setUTCHours(hour, 0, 0, 0)
+      return date.toISOString()
+    }
+
+    const makeSession = (id: string, startedAt: string, elapsedMs: number): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Multiplication',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 1,
+      questions: [{
+        id: 'q-1',
+        prompt: '2 × 3',
+        type: 'decimal',
+        answer: 6,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      }],
+      answers: [{
+        questionId: 'q-1',
+        questionIndex: 0,
+        completed: true,
+        usedHelp: false,
+        usedReveal: false,
+        elapsedMs,
+        isCorrect: true,
+      }],
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeSession('20260322-090000-Multiplication', isoDaysAgo(0, 9), 25 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260322-150000-Multiplication', isoDaysAgo(0, 15), 20 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260321-110000-Multiplication', isoDaysAgo(1, 11), 35 * 60 * 1000))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.dailyPractice).toEqual({
+      targetMs: 60 * 60 * 1000,
+      todayMs: 45 * 60 * 1000,
+      yesterdayMs: 35 * 60 * 1000,
+    })
   })
 
   test('dashboard returns learning coach guidance with missions, mastery, revisit queue, and parent review', async () => {

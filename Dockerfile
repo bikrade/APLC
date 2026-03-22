@@ -4,6 +4,7 @@ WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
 
+COPY scripts/ /app/scripts/
 COPY client/ ./
 RUN npm run build
 

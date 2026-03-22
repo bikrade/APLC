@@ -7,7 +7,9 @@
 - One-question-at-a-time interaction model with back navigation only.
 - Primary UX goal: engaging, Duolingo-style learning flow with immediate animated feedback.
 - Home view now includes a learning-coach layer: weekly mission, habit signals, mastery cards, revisit queue, and parent review notes.
+- Home view also includes daily-practice progress bars that compare today and yesterday against a 60-minute target.
 - Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
+- Each subject card exposes two launch modes: `Guided` for live correctness feedback and `Quiz` for quieter, end-of-session review.
 - Reading sessions can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
 - Reading page views can surface short checkpoint prompts, and summary views now include a compact celebrate / grow next / tomorrow coaching strip.
 
@@ -15,7 +17,7 @@
 
 - Node.js + Express + TypeScript REST API.
 - Session lifecycle endpoints: start, fetch, answer, help, reveal, pause.
-- Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap) and derives a learning-coach payload for the landing page.
+- Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap, today/yesterday practice time) and derives a learning-coach payload for the landing page.
 - Insights endpoint derives subject-aware performance guidance from completed history across all subjects.
 - Health endpoint for operational checks.
 
@@ -45,6 +47,7 @@
 - `data/users/<userId>/profile.json` — user profile (filesystem) or `users/<userId>/profile.json` (blob).
 - `data/users/<userId>/sessions/<sessionId>.json` — session history (filesystem) or `users/<userId>/sessions/<sessionId>.json` (blob).
 - `data/users/<userId>/insights.txt` — performance insights (filesystem) or `users/<userId>/insights.txt` (blob).
+- Session records now persist `sessionMode` so guided and quiz runs can be resumed faithfully and analyzed consistently.
 - Azure Blob Storage uses `DefaultAzureCredential` (system-assigned managed identity in production — no shared keys).
 - Storage account: `aplcfiles2026`, blob container: `userdata`.
 - No database dependency. If DB becomes necessary later, prefer Azure SQL for ease of Azure setup.
@@ -69,6 +72,7 @@
 - Duolingo-inspired celebration on correct answers: multiple confetti styles (classic, shooting stars, school pride, cascade) and animated overlay.
 - Feedback banners: green for correct (🎉), blue/red for incorrect (💪), with contextual messaging.
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
+- Quiz-mode math flow records correctness, hints, reveals, and timing exactly like Guided mode, but suppresses instant correctness banners after answer entry and defers the question review to the summary screen.
 - Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
 - Reading UX: `170 WPM` is the target pace, speeds around that benchmark earn strong speed credit, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
 - Landing page UX: progress insights banner plus coaching panels help convert raw performance data into specific next steps without making the dashboard feel like an admin console.

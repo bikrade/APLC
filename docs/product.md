@@ -33,8 +33,10 @@ Phase 1 includes:
 
 A simple dev login (pre-filled, no authentication complexity)
 A modern dashboard showing practice stats, progress, and a GitHub-style activity heatmap
+A visible daily practice tracker showing how much time Adi spent yesterday and how much he has spent today toward a 60-minute habit goal
 A single integrated learning flow across Multiplication, Division, and Reading
 Let him start a session that will include 10-15 questions (similar lesson concept as Duolingo)
+Before each new session, let him choose either a Guided Session or a Quiz Session
 Each session should be designed in a way to finish in 30 min. Add 10-15 questions based on the time goal.
 One-question-at-a-time practice flow, can move backwards to see previous questions, but not forward till current question done
 Answer input and validation
@@ -55,6 +57,8 @@ The app presents one question at a time
 Questions are aligned with CIS Grade 6 IB level
 Adi can type and submit an answer
 The app checks correctness and provides immediate feedback
+In Guided Session mode, the app checks correctness and provides immediate feedback after each answer
+In Quiz mode, the app records each answer and moves forward without instant right/wrong confirmation, then shows the full result review at the end
 Adi can click “Need help” to receive step-by-step guidance without directly revealing the answer
 Adi can click “Show answer” to see the correct answer and explanation
 The app records:
@@ -64,6 +68,7 @@ time spent on each question
 whether help or answer reveal was used
 whether help, retries, or answer reveal were used
 Adi cannot move to the next question until the current one is completed
+In Quiz mode, a question is considered completed once Adi submits an answer or chooses to show the answer and explanation
 Adi can navigate back to previous questions within the session
 Each session and dashboard should reflect cumulative learning history, using recent sessions for trend detection and broader history for coaching stability
 If there is no enough past data, say that we need at least 3 test data 
@@ -80,6 +85,7 @@ Bring in an element of past performance influence future question in Phase 1 its
 When difficulty changes, tell Adi clearly and supportively so he understands why the app is adjusting
 For reading, treat `170 WPM` as the target pace, reward reaching that pace on speed score, but warn and verify comprehension when pace climbs meaningfully above it
 The home experience should include a visible weekly learning path, habit signals, subject mastery states, a revisit queue for weak spots, and a compact parent review section on the same landing page
+The home experience should also show a simple, motivating daily-practice progress bar for yesterday and today so Adi can build a 60-minute daily habit
 The app should surface light in-flow reading coaching prompts and a short session-end coach summary so each session closes with celebration, reflection, and a next step
 
 ## Non-functional Requirements
@@ -92,7 +98,7 @@ The system should be stable for daily usage without crashes or data loss
 
 ## User Flows
 Primary flow:
-Adi logs in → lands on modern dashboard (sees stats, streak, heatmap, weekly mission, mastery, parent review) → clicks “Start Session” under Multiplication → sees first question → enters answer → receives animated feedback → proceeds to next question
+Adi logs in → lands on modern dashboard (sees stats, streak, heatmap, daily 60-minute practice bars, weekly mission, mastery, parent review) → chooses Guided or Quiz under a subject → starts the session → sees first question → enters answer → receives the right style of feedback for the selected mode → proceeds through the session
 
 Help flow:
 Adi is stuck → clicks “Need help” → receives step-by-step guidance → attempts solution → submits answer
@@ -102,6 +108,9 @@ Adi cannot solve → clicks “Show answer” → sees solution and explanation 
 
 Session flow:
 Adi completes multiple questions → session data is saved locally → next session continues fresh but can use past data later
+
+Quiz flow:
+Adi wants a more assessment-like run → picks Quiz mode on the subject card → answers each question without instant correctness confirmation → optionally uses hints or shows the answer when stuck → sees a clean question-by-question review at the end
 
 Learning coach flow:
 Adi lands on the dashboard → sees this week's learning path, current habit signals, mastery by subject, and a revisit queue → starts the most helpful next session with clear purpose
@@ -126,6 +135,8 @@ Adi finishes a session → sees one celebration, one growth area, and one sugges
 - A progress bar and live score are always visible at the top of the session screen.
 - Difficulty changes are surfaced with animated, supportive popups so challenge adjustments never feel random or punitive.
 - The dashboard includes a calm coaching layer: weekly mission cards, mastery chips, revisit actions, and a parent review panel designed to be readable by both Adi and a parent.
+- The dashboard also includes a simple daily-practice habit tracker for today and yesterday against a visible 60-minute goal.
+- Subject cards include a lightweight Guided vs Quiz mode picker with clear explanatory copy so Adi understands what kind of session he is starting.
 - Reading pages can include light checkpoint prompts that steer attention toward meaning, inference, and page-level understanding without interrupting flow too heavily.
 
 ## Observability

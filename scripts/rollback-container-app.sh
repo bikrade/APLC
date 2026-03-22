@@ -11,10 +11,22 @@ if [[ -z "$APP_NAME" || -z "$RESOURCE_GROUP" || -z "$REVISION_NAME" ]]; then
 fi
 
 echo "Re-activating revision: $REVISION_NAME"
-az containerapp revision activate \
+set +e
+ACTIVATE_OUTPUT=$(az containerapp revision activate \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --revision "$REVISION_NAME"
+  --revision "$REVISION_NAME" 2>&1)
+ACTIVATE_EXIT=$?
+set -e
+
+if [[ $ACTIVATE_EXIT -ne 0 ]]; then
+  if [[ "$ACTIVATE_OUTPUT" == *"RevisionAlreadyInRequestedState"* ]]; then
+    echo "Revision $REVISION_NAME is already active. Continuing rollback."
+  else
+    echo "$ACTIVATE_OUTPUT"
+    exit $ACTIVATE_EXIT
+  fi
+fi
 
 echo "Routing 100% traffic back to $REVISION_NAME"
 az containerapp ingress traffic set \

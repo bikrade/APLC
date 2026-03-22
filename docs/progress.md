@@ -108,3 +108,11 @@
   - Top navigation now shows an elegant product version badge generated from git commit history
   - Clicking the badge reveals a compact summary of the most recent shipped changes
   - Build/dev/test flows now sync `client/src/generated/releaseInfo.ts` automatically via `scripts/generate-release-info.mjs`
+- Daily habit and session-mode update completed:
+  - `GET /dashboard/:userId` now returns `dailyPractice` with today and yesterday time totals against a 60-minute target
+  - The dashboard now visualizes those totals as simple progress bars to reinforce daily habit-building
+  - Each subject card now offers `Guided` and `Quiz` start modes before launching a fresh session
+  - Session records persist `sessionMode`, and resume flows now restore the correct mode label and behavior
+  - Quiz mode preserves the same adaptive logic, hints, reveals, and scoring, but defers instant correctness feedback until the final session review
+  - Summary UI now includes a question-by-question quiz review block for math quiz sessions
+  - Server integration and Playwright coverage expanded for quiz progression and daily-practice dashboard metrics

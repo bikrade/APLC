@@ -21,7 +21,7 @@ import {
   userProfileExists,
   saveSession,
 } from './storage'
-import type { QuestionState, SessionRecord, Subject } from './types'
+import type { QuestionState, SessionMode, SessionRecord, Subject } from './types'
 import { createQuestionPlaceholder, generateQuestionByType, getQuestionTypeForIndex, isAnswerCorrect, parseAnswer } from './utils'
 import { generateHintSteps, generateExplanation, isOpenAIConfigured, flushCallStats } from './openai'
 import {
@@ -41,6 +41,7 @@ const clientDistDir = path.resolve(process.cwd(), '../client/dist')
 const clientIndexPath = path.join(clientDistDir, 'index.html')
 const USER_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i
 const SESSION_ID_PATTERN = /^\d{8}-\d{6}-(Multiplication|Division|Reading)$/
+const DAILY_TARGET_MS = 60 * 60 * 1000
 
 type RateLimitEntry = {
   count: number
@@ -162,6 +163,22 @@ function getAnswerStateAt(session: SessionRecord, index: number) {
 
 function isSubject(value: string): value is Subject {
   return value === 'Multiplication' || value === 'Division' || value === 'Reading'
+}
+
+function isSessionMode(value: string): value is SessionMode {
+  return value === 'guided' || value === 'quiz'
+}
+
+function getSessionMode(session: SessionRecord): SessionMode {
+  return session.sessionMode ?? 'guided'
+}
+
+function getIsoDay(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function getSessionPracticeTimeMs(session: SessionRecord): number {
+  return session.answers.reduce((sum, answer) => sum + Math.max(0, answer.elapsedMs ?? 0), 0)
 }
 
 function createSessionId(subject: Subject, date = new Date()): string {
@@ -1051,6 +1068,11 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
     const learningCoach = buildLearningCoach(allSessions)
+    const today = new Date()
+    const todayIso = getIsoDay(today)
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayIso = getIsoDay(yesterday)
 
     // Total sessions
     const totalSessions = allSessions.length
@@ -1072,12 +1094,17 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
 
     // Activity days (ISO date strings for heatmap)
     const activityDays: string[] = allSessions.map((s) => s.startedAt.slice(0, 10))
+    const todayPracticeMs = allSessions
+      .filter((session) => session.startedAt.slice(0, 10) === todayIso)
+      .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
+    const yesterdayPracticeMs = allSessions
+      .filter((session) => session.startedAt.slice(0, 10) === yesterdayIso)
+      .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
 
     // Current streak (consecutive days with at least one session)
     const uniqueDays = [...new Set(activityDays)].sort().reverse()
     let currentStreak = 0
-    const today = new Date().toISOString().slice(0, 10)
-    let checkDate = today
+    let checkDate = todayIso
     for (const day of uniqueDays) {
       if (day === checkDate) {
         currentStreak++
@@ -1176,6 +1203,11 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       avgTimePerQuestion,
       currentStreak,
       activityDays,
+      dailyPractice: {
+        targetMs: DAILY_TARGET_MS,
+        todayMs: todayPracticeMs,
+        yesterdayMs: yesterdayPracticeMs,
+      },
       progressInsights,
       learningCoach,
     })
@@ -1200,6 +1232,7 @@ app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
         totalQuestions: session.questions.length,
         accuracy,
         subject: session.subject,
+        sessionMode: getSessionMode(session),
       }
     })
 
@@ -1220,6 +1253,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     : String(req.body?.userId || '').trim()
   const questionCount = Number(req.body?.questionCount || 12)
   const requestedSubject = String(req.body?.subject || 'Multiplication').trim()
+  const requestedSessionMode = String(req.body?.sessionMode || 'guided').trim()
   if (!userId) {
     res.status(400).json({ error: 'userId is required' })
     return
@@ -1232,6 +1266,10 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     res.status(400).json({ error: 'subject must be Multiplication, Division, or Reading' })
     return
   }
+  if (!isSessionMode(requestedSessionMode)) {
+    res.status(400).json({ error: 'sessionMode must be guided or quiz' })
+    return
+  }
   const exists = await userProfileExists(userId)
   if (!exists) {
     logger.warn('Session start failed: profile not found', { userId })
@@ -1241,6 +1279,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   await deleteLegacySessionFiles(userId)
   const existingActiveSession = await pruneActiveSessionsForSubject(userId, requestedSubject)
   if (existingActiveSession) {
+    existingActiveSession.sessionMode = getSessionMode(existingActiveSession)
     existingActiveSession.adaptiveDifficultyLevel = clampDifficultyLevel(existingActiveSession.adaptiveDifficultyLevel ?? 3)
     existingActiveSession.adaptiveMomentum = existingActiveSession.adaptiveMomentum ?? 0
     existingActiveSession.adaptiveQuestionsSinceChange = existingActiveSession.adaptiveQuestionsSinceChange ?? 0
@@ -1249,6 +1288,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     res.json({
       sessionId: existingActiveSession.id,
       subject: existingActiveSession.subject,
+      sessionMode: getSessionMode(existingActiveSession),
       questionCount: existingActiveSession.questions.length,
       questions: existingActiveSession.questions.map((question, idx) => toClientQuestion(question, idx)),
       answers: existingActiveSession.answers,
@@ -1288,6 +1328,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     id: createSessionId(requestedSubject),
     userId,
     subject: requestedSubject,
+    sessionMode: requestedSessionMode,
     status: 'active',
     startedAt: new Date().toISOString(),
     currentIndex: 0,
@@ -1315,6 +1356,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   res.json({
     sessionId: session.id,
     subject: session.subject,
+    sessionMode: getSessionMode(session),
     questionCount: questions.length,
     questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
     answers,
@@ -1356,6 +1398,7 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
   res.json({
     sessionId: session.id,
     subject: session.subject,
+    sessionMode: getSessionMode(session),
     status: session.status,
     currentIndex: session.currentIndex,
     questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
@@ -1463,10 +1506,14 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     session.completedAt = new Date().toISOString()
   }
   await saveSession(session)
+  if (session.status === 'completed') {
+    await refreshInsightsFile(userId)
+  }
   res.json({
     correctAnswer: hydratedQuestion.answer,
     explanation: hydratedQuestion.explanation,
     currentIndex: session.currentIndex,
+    status: session.status,
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
     difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
@@ -1611,12 +1658,25 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     res.status(400).json({ error: 'Please enter a number or fraction (e.g. 0.6 or 3/5)' })
     return
   }
+  const sessionMode = getSessionMode(session)
   const isCorrect = isAnswerCorrect(parsed, hydratedQuestion.answer, hydratedQuestion.tolerance)
   state.attemptCount = (state.attemptCount ?? 0) + 1
   state.userAnswer = parsed
   state.isCorrect = isCorrect
   let adaptiveNotification: AdaptiveNotification | null = null
-  if (isCorrect) {
+  if (sessionMode === 'quiz') {
+    state.completed = true
+    state.elapsedMs = Math.max(state.elapsedMs ?? 0, Math.max(0, elapsedMs))
+    state.firstAttemptCorrect = isCorrect && (state.attemptCount ?? 1) === 1 && !state.usedHelp && !state.usedReveal
+    adaptiveNotification = maybeAdjustDifficulty(session, state, isCorrect ? 'correct-answer' : 'wrong-first-attempt')
+    if (session.currentIndex < session.questions.length - 1) {
+      session.currentIndex += 1
+      await ensureQuestionGenerated(session, session.currentIndex)
+    } else {
+      session.status = 'completed'
+      session.completedAt = new Date().toISOString()
+    }
+  } else if (isCorrect) {
     state.completed = true
     state.elapsedMs = Math.max(state.elapsedMs ?? 0, Math.max(0, elapsedMs))
     state.firstAttemptCorrect = (state.attemptCount ?? 1) === 1 && !state.usedHelp && !state.usedReveal
@@ -1638,7 +1698,11 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
   }
   await saveSession(session)
   let explanation: string
-  if (isOpenAIConfigured()) {
+  if (sessionMode === 'quiz') {
+    explanation = isCorrect
+      ? 'Recorded for your final score. Keep moving through the quiz.'
+      : 'Recorded for your final score. You will see how you did at the end of the quiz.'
+  } else if (isOpenAIConfigured()) {
     try {
       explanation = await generateExplanation(hydratedQuestion.prompt, parsed, hydratedQuestion.answer, isCorrect)
     } catch (err) {

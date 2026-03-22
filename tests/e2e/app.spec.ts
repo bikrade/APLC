@@ -13,7 +13,7 @@ test('multiplication wrong-answer flow requires retry or reveal before continuin
   await enterLocalApp(page)
 
   const multiplicationCard = page.locator('.subject-card').filter({ hasText: 'Multiplication' })
-  await multiplicationCard.getByRole('button', { name: /start session/i }).click()
+  await multiplicationCard.getByRole('button', { name: /start guided/i }).click()
 
   await expect(page.getByText(/Question 1 of 12/i)).toBeVisible()
   await page.getByPlaceholder(/e\.g\. 0\.6 or 3\/5/i).fill('9999')
@@ -30,13 +30,30 @@ test('multiplication wrong-answer flow requires retry or reveal before continuin
   await expect(page.getByRole('button', { name: /see next question/i })).toBeVisible()
 })
 
+test('division quiz mode advances after an answer without showing right-or-wrong feedback', async ({ page }) => {
+  await enterLocalApp(page)
+
+  const divisionCard = page.locator('.subject-card').filter({ hasText: 'Division' })
+  await divisionCard.getByRole('button', { name: /^quiz$/i }).click()
+  await divisionCard.getByRole('button', { name: /start quiz/i }).click()
+
+  await expect(page.getByText(/Question 1 of 12/i)).toBeVisible()
+  await page.getByPlaceholder(/e\.g\. 0\.6 or 3\/5/i).fill('9999')
+  await page.getByRole('button', { name: /submit & next/i }).click()
+
+  await expect(page.getByText(/Question 2 of 12/i)).toBeVisible()
+  await expect(page.getByText(/Not quite right/i)).toBeHidden()
+  await expect(page.getByRole('button', { name: /retry/i })).toBeHidden()
+})
+
 test('division session launches in the same shared wizard shell', async ({ page }) => {
   await enterLocalApp(page)
 
   const divisionCard = page.locator('.subject-card').filter({ hasText: 'Division' })
-  await divisionCard.getByRole('button', { name: /start session/i }).click()
+  await divisionCard.getByRole('button', { name: /continue quiz/i }).click()
 
-  await expect(page.getByText(/Question 1 of 12/i)).toBeVisible()
+  await expect(page.locator('.question-counter')).toContainText(/Question [12] of 12/i)
+  await expect(page.locator('.question-badge-row')).toContainText(/quiz/i)
   await expect(page.locator('.question-prompt')).toContainText('÷')
   await expect(page.getByText(/Time/i)).toBeVisible()
 })
@@ -45,7 +62,7 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
   await enterLocalApp(page)
 
   const readingCard = page.locator('.subject-card').filter({ hasText: 'Reading' })
-  await readingCard.getByRole('button', { name: /start session/i }).click()
+  await readingCard.getByRole('button', { name: /start guided/i }).click()
 
   await expect(page.getByText(/Question 1 of 6/i)).toBeVisible()
 

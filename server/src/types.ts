@@ -1,4 +1,5 @@
 export type Subject = 'Multiplication' | 'Division' | 'Reading'
+export type SessionMode = 'guided' | 'quiz'
 export type QuestionType = 'decimal' | 'fraction' | 'percentage' | 'mixed' | 'reading_page' | 'reading_summary' | 'reading_quiz'
 export type QuestionKind = 'math' | 'reading-page' | 'reading-summary' | 'reading-quiz'
 
@@ -59,6 +60,7 @@ export interface SessionRecord {
   id: string
   userId: string
   subject: Subject
+  sessionMode?: SessionMode
   status: 'active' | 'completed'
   startedAt: string
   completedAt?: string

@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "channel": "beta",
-  "displayLabel": "v0.4.0 beta",
-  "shortSha": "be067d3",
+  "displayLabel": "v0.5.0 beta",
+  "shortSha": "755eba2",
   "releaseDate": "2026-03-22",
-  "headline": "Deepen adaptive reading experience",
+  "headline": "Add learning coach and release badge",
   "changes": [
+    {
+      "sha": "755eba2",
+      "date": "2026-03-22",
+      "summary": "Add learning coach and release badge"
+    },
     {
       "sha": "be067d3",
       "date": "2026-03-22",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "2bd01f8",
       "date": "2026-03-22",
       "summary": "Simplify dashboard welcome header"
-    },
-    {
-      "sha": "7d43a1f",
-      "date": "2026-03-22",
-      "summary": "Disable SPA shell caching"
     }
   ]
 } as const

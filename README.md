@@ -11,7 +11,8 @@ An adaptive, personalized learning web app for Grade 6 math and reading practice
 - **Reading** — fresh AI-written middle-grade stories, corrected server-verified WPM scoring, fast-reader quiz mode, and comprehension warnings
 - **AI-powered** — OpenAI (gpt-4o-mini) generates questions, hints, and per-answer explanations
 - **Adaptive difficulty** — uses historical subject performance plus live first-attempt behavior, pace, and support usage
-- **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, progress insights, weekly mission, mastery, revisit queue, and parent review
+- **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, today-vs-yesterday practice bars against a 60-minute goal, progress insights, weekly mission, mastery, revisit queue, and parent review
+- **Session modes** — each subject can start in `Guided` mode with live correctness feedback or `Quiz` mode with end-of-session review
 - **Release badge** — top-nav version pill generated from git history with click-to-open recent change notes
 - **Google OAuth 2.0** — HMAC-SHA256 session tokens, single allowed email
 - **Duolingo-style UX** — confetti celebrations, animated feedback, KaTeX math rendering
