@@ -999,8 +999,23 @@ app.get('/config/auth', noStore, (_req, res) => {
 })
 
 if (fs.existsSync(clientDistDir)) {
-  app.use(express.static(clientDistDir))
+  app.use(express.static(clientDistDir, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store')
+        return
+      }
+
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        return
+      }
+
+      res.setHeader('Cache-Control', 'public, max-age=0')
+    },
+  }))
   app.get(/^\/(?!auth\/|users$|dashboard\/|sessions\/in-progress\/|insights\/|session\/|config\/|health$).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
     res.sendFile(clientIndexPath)
   })
 }
