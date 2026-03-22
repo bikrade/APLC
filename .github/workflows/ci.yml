@@ -43,6 +43,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Audit production dependencies
+        run: npm run audit
+
       - name: Build and test
         run: npm run build && npm run test
 
@@ -62,6 +65,12 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Capture current active revision
+        id: previous
+        run: |
+          PREVIOUS_REVISION=$(az containerapp revision list -n aplc-app -g aplc-rg --query "[?properties.active].name | [0]" -o tsv)
+          echo "revision=$PREVIOUS_REVISION" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image to ACR
         run: |
@@ -101,11 +110,14 @@ jobs:
 
       - name: Verify deployment health
         run: |
-          sleep 20
+          sleep 30
           FQDN=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv)
-          STATUS=$(curl -sf "https://$FQDN/health" | jq -r '.status')
-          if [ "$STATUS" != "ok" ]; then
-            echo "Health check failed: $STATUS"
-            exit 1
-          fi
-          echo "Deployment healthy at https://$FQDN"
+          export SMOKE_BASE_URL="https://$FQDN"
+          node ./scripts/post-deploy-smoke.mjs
+          echo "Deployment healthy at $SMOKE_BASE_URL"
+
+      - name: Roll back failed deployment
+        if: failure() && steps.previous.outputs.revision != ''
+        run: |
+          chmod +x ./scripts/rollback-container-app.sh
+          ./scripts/rollback-container-app.sh aplc-app aplc-rg "${{ steps.previous.outputs.revision }}"

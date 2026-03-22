@@ -130,6 +130,7 @@ npm run lint
 - [docs/database.md](docs/database.md) — data schemas, storage design
 - [docs/api-contracts.md](docs/api-contracts.md) — API endpoints, request/response schemas
 - [docs/deployment.md](docs/deployment.md) — Azure deployment, CI/CD, environment setup
+- [docs/recovery.md](docs/recovery.md) — backup, restore, rollback, and recovery drill procedures
 - [docs/prompts.md](docs/prompts.md) — OpenAI prompt strategy and templates
 - [docs/progress.md](docs/progress.md) — development changelog
 

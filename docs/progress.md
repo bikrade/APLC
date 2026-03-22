@@ -78,3 +78,9 @@
 - CORS_ALLOWED_ORIGINS added to CI/CD workflow env vars.
 - Google login fix: restored secret references after YAML-based update stripped env vars.
 - Session persistence verified: data survives container restarts, redeployments, and scale-to-zero events via Azure Blob Storage.
+- Production hardening pass added:
+  - Azure IaC via `infra/main.bicep` with reproducible provisioning for ACR, ACA, storage, Insights, and alerts
+  - Security automation via CodeQL, Dependabot, Gitleaks, Trivy, and dependency audit workflows
+  - Frontend unit test layer via Vitest + Testing Library plus Playwright accessibility scan using axe
+  - Safer CD with post-deploy smoke checks and automatic Container App revision rollback on failure
+  - Backup and restore scripts plus documented recovery runbook in `docs/recovery.md`

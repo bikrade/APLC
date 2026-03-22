@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "appName": {
+      "value": "aplc"
+    },
+    "acrName": {
+      "value": "aplcregistry2026"
+    },
+    "logAnalyticsName": {
+      "value": "aplc-logs"
+    },
+    "appInsightsName": {
+      "value": "aplc-insights"
+    },
+    "containerAppsEnvironmentName": {
+      "value": "aplc-env"
+    },
+    "storageAccountName": {
+      "value": "aplcfiles2026"
+    },
+    "storageContainerName": {
+      "value": "userdata"
+    },
+    "containerAppName": {
+      "value": "aplc-app"
+    },
+    "containerImage": {
+      "value": "aplcregistry2026.azurecr.io/aplc:latest"
+    },
+    "corsAllowedOrigins": {
+      "value": "https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io"
+    },
+    "openAiModel": {
+      "value": "gpt-4o-mini"
+    },
+    "googleClientId": {
+      "value": "__SET_ME__"
+    },
+    "authAllowedEmail": {
+      "value": "__SET_ME__"
+    },
+    "authSessionSecret": {
+      "value": "__SET_ME__"
+    },
+    "openAiApiKey": {
+      "value": "__SET_ME__"
+    }
+  }
+}

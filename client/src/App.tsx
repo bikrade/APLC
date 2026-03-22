@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
-import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import './App.css'
+import { formatMs, getAccuracyColor, getQuestionTypeBadge, renderMath } from './lib/sessionUi'
 
 declare global {
   interface Window {
@@ -149,38 +149,6 @@ const ACTIVE_SUBJECTS: Array<{
     description: 'Reading speed & comprehension',
   },
 ]
-/* ── Math Rendering ────────────────────────────────────────── */
-/**
- * Renders a string that may contain LaTeX math notation.
- * Handles: \( ... \), \[ ... \], $...$, $$...$$
- * Falls back to plain text if KaTeX fails.
- */
-function renderMath(text: string): string {
-  if (!text) return text
-
-  // Replace display math \[ ... \] and $$ ... $$
-  let result = text.replace(/\\\[(.+?)\\\]|\$\$(.+?)\$\$/gs, (_match, p1, p2) => {
-    const latex = (p1 ?? p2).trim()
-    try {
-      return katex.renderToString(latex, { displayMode: true, throwOnError: false })
-    } catch {
-      return latex
-    }
-  })
-
-  // Replace inline math \( ... \) and $ ... $
-  result = result.replace(/\\\((.+?)\\\)|\$([^$\n]+?)\$/gs, (_match, p1, p2) => {
-    const latex = (p1 ?? p2).trim()
-    try {
-      return katex.renderToString(latex, { displayMode: false, throwOnError: false })
-    } catch {
-      return latex
-    }
-  })
-
-  return result
-}
-
 /* ── MathText Component ────────────────────────────────────── */
 function MathText({ text, className }: { text: string; className?: string }) {
   const html = useMemo(() => renderMath(text), [text])
@@ -190,26 +158,6 @@ function MathText({ text, className }: { text: string; className?: string }) {
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
-}
-
-/* ── Helpers ───────────────────────────────────────────────── */
-function formatMs(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
-function getQuestionTypeBadge(type: string): string {
-  const map: Record<string, string> = {
-    decimal: '🔢 Decimal',
-    fraction: '½ Fraction',
-    percentage: '% Percentage',
-    mixed: '🔀 Mixed',
-    reading_page: '📄 Story Page',
-    reading_summary: '📝 Summary',
-  }
-  return map[type] ?? type
 }
 
 function getGreeting(name: string): string {
@@ -224,12 +172,6 @@ function getGreetingTheme(): 'morning' | 'afternoon' | 'evening' {
   if (hour < 12) return 'morning'
   if (hour < 17) return 'afternoon'
   return 'evening'
-}
-
-function getAccuracyColor(accuracy: number): string {
-  if (accuracy >= 80) return '#58cc02'
-  if (accuracy >= 60) return '#ffc800'
-  return '#ff4b4b'
 }
 
 function getCelebrationMessages(): string[] {
@@ -278,7 +220,23 @@ function defaultInsightsMessage(): InsightResponse {
 }
 
 /* ── Activity Heatmap Component ────────────────────────────── */
-const HEATMAP_YEAR = new Date().getFullYear()
+function getWindowStartDate(monthCount: number, now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth() - (monthCount - 1), 1)
+}
+
+function getWindowEndDate(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
+}
+
+function getWeekCountForWindow(monthCount: number, now: Date): number {
+  const startDate = getWindowStartDate(monthCount, now)
+  const endDate = getWindowEndDate(now)
+  const startGridDate = new Date(startDate)
+  startGridDate.setDate(startDate.getDate() - startDate.getDay())
+  const endGridDate = new Date(endDate)
+  endGridDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
+  return Math.ceil((endGridDate.getTime() - startGridDate.getTime() + 86400000) / (7 * 86400000))
+}
 
 function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -286,39 +244,22 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   const cellSize = 12
   const cellGap = 4
   const dayLabelWidth = 42
-
-  const getWindowStartMonth = (monthCount: number): number => {
-    if (monthCount === 12) return 0
-    if (monthCount === 6) return 6
-    return 9
-  }
-
-  const getWeekCountForWindow = (monthCount: number): number => {
-    const startMonth = getWindowStartMonth(monthCount)
-    const startDate = new Date(HEATMAP_YEAR, startMonth, 1)
-    const endDate = new Date(HEATMAP_YEAR, startMonth + monthCount, 0)
-    const startGridDate = new Date(startDate)
-    startGridDate.setDate(startDate.getDate() - startDate.getDay())
-    const endGridDate = new Date(endDate)
-    endGridDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
-    return Math.ceil((endGridDate.getTime() - startGridDate.getTime() + 86400000) / (7 * 86400000))
-  }
+  const now = useMemo(() => new Date(), [])
 
   const monthsToShow = useMemo(() => {
     if (containerWidth <= 0) return 12
 
     const availableWidth = Math.max(containerWidth - dayLabelWidth - 24, 0)
     for (const option of [12, 6, 3]) {
-      const weekCount = getWeekCountForWindow(option)
+      const weekCount = getWeekCountForWindow(option, now)
       const requiredWidth = weekCount * cellSize + Math.max(weekCount - 1, 0) * cellGap
       if (requiredWidth <= availableWidth) return option
     }
     return 3
-  }, [containerWidth])
+  }, [containerWidth, now])
 
-  const startMonth = getWindowStartMonth(monthsToShow)
-  const startDate = new Date(HEATMAP_YEAR, startMonth, 1)
-  const endDate = new Date(HEATMAP_YEAR, startMonth + monthsToShow, 0)
+  const startDate = getWindowStartDate(monthsToShow, now)
+  const endDate = getWindowEndDate(now)
   const startGridDate = new Date(startDate)
   startGridDate.setDate(startDate.getDate() - startDate.getDay())
   const endGridDate = new Date(endDate)
@@ -356,7 +297,7 @@ function ActivityHeatmap({ activityDays }: { activityDays: string[] }) {
   }
 
   const visibleMonths = Array.from({ length: monthsToShow }, (_, index) =>
-    new Date(HEATMAP_YEAR, startMonth + index, 1).toLocaleString('en-US', { month: 'short' }),
+    new Date(startDate.getFullYear(), startDate.getMonth() + index, 1).toLocaleString('en-US', { month: 'short' }),
   )
   const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', '']
   const trackWidth = weeks.length * cellSize + Math.max(weeks.length - 1, 0) * cellGap
@@ -577,6 +518,53 @@ function App() {
     return latest
   }, [inProgressSessions])
 
+  /* ── Dashboard stats computation ───────────────────────────── */
+  const computeDashStats = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
+    try {
+      const res = await apiFetch(`/dashboard/${userId}`, {}, tokenOverride)
+      if (res.ok) {
+        const data = (await res.json()) as DashboardStats
+        setDashStats(data)
+      }
+    } catch {
+      // Dashboard stats are optional
+    }
+  }, [apiFetch])
+
+  /* ── Compute in-progress sessions ──────────────────────────── */
+  const computeInProgress = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
+    try {
+      const res = await apiFetch(`/sessions/in-progress/${userId}`, {}, tokenOverride)
+      if (res.ok) {
+        const data = (await res.json()) as { sessions: InProgressSession[] }
+        setInProgressSessions(data.sessions ?? [])
+      }
+    } catch {
+      // optional
+    }
+  }, [apiFetch])
+
+  const loadHomeData = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
+    setStage('home')
+    const [insightsResult, dashboardResult, inProgressResult] = await Promise.allSettled([
+      apiFetch(`/insights/${userId}`, {}, tokenOverride, 10000),
+      computeDashStats(userId, tokenOverride),
+      computeInProgress(userId, tokenOverride),
+    ])
+
+    if (insightsResult.status === 'fulfilled' && insightsResult.value.ok) {
+      setInsights((await insightsResult.value.json()) as InsightResponse)
+    } else {
+      setInsights(defaultInsightsMessage())
+    }
+
+    const dashboardLoaded = dashboardResult.status === 'fulfilled'
+    const inProgressLoaded = inProgressResult.status === 'fulfilled'
+    setError(dashboardLoaded || inProgressLoaded
+      ? ''
+      : 'Signed in, but dashboard data is still loading. Please refresh once if it does not appear.')
+  }, [apiFetch, computeDashStats, computeInProgress])
+
   /* ── Timer ─────────────────────────────────────────────────── */
   useEffect(() => {
     if (stage !== 'session' || isPaused) return
@@ -604,7 +592,7 @@ function App() {
     loadUsers().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : 'Unexpected error')
     })
-  }, [apiFetch, authConfigLoaded, isGoogleAuthEnabled])
+  }, [apiFetch, authConfigLoaded, isGoogleAuthEnabled, loadHomeData])
 
   useEffect(() => {
     if (!authConfigLoaded) {
@@ -644,7 +632,7 @@ function App() {
     }
 
     void restoreSession()
-  }, [apiFetch, authConfigLoaded, isGoogleAuthEnabled])
+  }, [apiFetch, authConfigLoaded, isGoogleAuthEnabled, loadHomeData])
 
   useEffect(() => {
     if (!isGoogleAuthEnabled || googleScriptReady) {
@@ -680,50 +668,6 @@ function App() {
       }
     }
   }, [stage, viewIndex, isReadingSummary])
-
-  /* ── Dashboard stats computation ───────────────────────────── */
-  const computeDashStats = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
-    try {
-      const res = await apiFetch(`/dashboard/${userId}`, {}, tokenOverride)
-      if (res.ok) {
-        const data = (await res.json()) as DashboardStats
-        setDashStats(data)
-      }
-    } catch {
-      // Dashboard stats are optional
-    }
-  }, [apiFetch])
-
-  /* ── Compute in-progress sessions ──────────────────────────── */
-  const computeInProgress = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
-    try {
-      const res = await apiFetch(`/sessions/in-progress/${userId}`, {}, tokenOverride)
-      if (res.ok) {
-        const data = (await res.json()) as { sessions: InProgressSession[] }
-        setInProgressSessions(data.sessions ?? [])
-      }
-    } catch {
-      // optional
-    }
-  }, [apiFetch])
-
-  const loadHomeData = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
-    setStage('home')
-    const [insightsResult] = await Promise.allSettled([
-      apiFetch(`/insights/${userId}`, {}, tokenOverride, 10000),
-      computeDashStats(userId, tokenOverride),
-      computeInProgress(userId, tokenOverride),
-    ])
-
-    if (insightsResult.status === 'fulfilled' && insightsResult.value.ok) {
-      setInsights((await insightsResult.value.json()) as InsightResponse)
-      setError('')
-      return
-    }
-
-    setInsights(defaultInsightsMessage())
-    setError('Signed in, but dashboard insights are still loading. Please refresh once if they do not appear.')
-  }, [apiFetch, computeDashStats, computeInProgress])
 
   const handleGoogleCredential = useCallback(async (credential: string): Promise<void> => {
     setError('')

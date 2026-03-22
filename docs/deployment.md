@@ -109,8 +109,10 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
 1. **Azure Login** via OIDC (federated credentials, no stored secrets)
 2. **ACR Build** — Docker image built in ACR (`aplc:<sha>` + `aplc:latest`)
 3. **Update secrets** — syncs Container Apps secrets from GitHub secrets
-4. **Deploy** — updates Container App with new image + env vars
-5. **Health check** — verifies `/health` returns `{"status":"ok"}`
+4. **Capture active revision** — stores the last known good Container App revision
+5. **Deploy** — updates Container App with new image + env vars
+6. **Smoke check** — verifies `/`, `/health`, and `/config/auth`
+7. **Rollback on failure** — re-activates the previous revision if smoke checks fail
 
 ### GitHub Secrets (11)
 
@@ -129,6 +131,15 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
 | `APPINSIGHTS_CONNECTION_STRING` | Application Insights connection |
 
 GitHub environment: `production` (required for CD job).
+
+## Security Automation
+
+The repository now includes dedicated security automation:
+
+- `ci.yml` runs dependency audits as part of the main pipeline
+- `security.yml` runs dependency audit, gitleaks, and Trivy scans
+- `codeql.yml` performs GitHub CodeQL analysis
+- `dependabot.yml` keeps npm and GitHub Actions dependencies current
 
 ## Azure Resources
 
@@ -156,6 +167,19 @@ az containerapp update \
   -n aplc-app -g aplc-rg \
   --image aplcregistry2026.azurecr.io/aplc:latest
 ```
+
+## Infrastructure as Code
+
+Azure resources can now be provisioned reproducibly from [infra/main.bicep](../infra/main.bicep):
+
+```bash
+az deployment group create \
+  --resource-group aplc-rg \
+  --template-file infra/main.bicep \
+  --parameters @infra/main.parameters.json
+```
+
+See [infra/README.md](../infra/README.md) for the full provisioning flow.
 
 ## Scaling Considerations
 
@@ -214,4 +238,14 @@ Note: without `AZURE_STORAGE_ACCOUNT` set, data falls back to filesystem (requir
 ```bash
 ./aplc-up.sh    # rebuild and start local server + ngrok
 ./aplc-status.sh # check status
+```
+
+## Recovery
+
+Backup and restore procedures are documented in [docs/recovery.md](./recovery.md). The repo also includes:
+
+```bash
+./scripts/backup-local-data.sh
+./scripts/backup-azure-blob.sh aplcfiles2026 userdata backups/blob-export
+./scripts/restore-azure-blob.sh aplcfiles2026 userdata backups/blob-export
 ```

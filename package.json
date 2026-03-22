@@ -8,12 +8,18 @@
     "lint:client": "npm --prefix client run lint",
     "lint:server": "npm --prefix server run lint",
     "lint": "npm run lint:client && npm run lint:server",
+    "test:client": "npm --prefix client run test",
     "test:server": "npm --prefix server run test",
     "test:e2e": "playwright test",
-    "test": "npm run test:server && npm run test:e2e",
-    "ci": "npm run lint && npm run build && npm run test"
+    "test": "npm run test:client && npm run test:server && npm run test:e2e",
+    "audit:root": "npm audit --audit-level=high --omit=dev",
+    "audit:client": "npm --prefix client audit --audit-level=high --omit=dev",
+    "audit:server": "npm --prefix server audit --audit-level=high --omit=dev",
+    "audit": "npm run audit:root && npm run audit:client && npm run audit:server",
+    "ci": "npm run lint && npm run audit && npm run build && npm run test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.55.1"
   }
 }
