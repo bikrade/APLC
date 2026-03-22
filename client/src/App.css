@@ -3030,11 +3030,6 @@
     grid-template-columns: 1fr;
   }
 
-  .progress-insights-banner {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .stats-row {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3510,147 +3505,9 @@
   cursor: not-allowed;
 }
 
-/* ── Progress Insights Panel ─────────────────────────────────── */
-.progress-insights-panel {
-  background: var(--color-card);
-  border-radius: 20px;
-  padding: 20px 24px;
-  box-shadow: var(--shadow-sm);
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.progress-insights-panel.trend-improving {
-  border-color: rgba(88, 204, 2, 0.3);
-  background: linear-gradient(135deg, #f0fff0 0%, #e8ffe8 100%);
-}
-
-.progress-insights-panel.trend-declining {
-  border-color: rgba(255, 75, 75, 0.3);
-  background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
-}
-
-.progress-insights-panel.trend-steady {
-  border-color: rgba(28, 176, 246, 0.3);
-  background: linear-gradient(135deg, #f0f8ff 0%, #e8f4ff 100%);
-}
-
-.progress-insights-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.progress-insights-icon {
-  font-size: 32px;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-.progress-insights-title {
-  font-size: 17px;
-  font-weight: 800;
-  color: var(--color-text);
-  margin-bottom: 4px;
-}
-
-.progress-insights-message {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-}
-
-.progress-insights-banner {
-  border-radius: 20px;
-  padding: 18px 22px;
-  margin-bottom: 16px;
-  border: 2px solid transparent;
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.95fr);
-  align-items: center;
-  gap: 16px;
-}
-
-.progress-insights-copy {
-  min-width: 0;
-}
-
-.progress-insights-banner.trend-improving {
-  border-color: rgba(88, 204, 2, 0.24);
-  background: linear-gradient(135deg, #f3fff2 0%, #fbfffb 100%);
-}
-
-.progress-insights-banner.trend-declining {
-  border-color: rgba(245, 158, 11, 0.24);
-  background: linear-gradient(135deg, #fff9ed 0%, #fffdf8 100%);
-}
-
-.progress-insights-banner.trend-steady,
-.progress-insights-banner.trend-new {
-  border-color: rgba(28, 176, 246, 0.18);
-  background: linear-gradient(135deg, #f7fbff 0%, #fcfdff 100%);
-}
-
-.progress-insights-kicker {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-}
-
-.progress-insights-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.progress-insights-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 12px 10px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(31, 36, 55, 0.08);
-}
-
-.progress-insights-stat-value {
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--color-text);
-  line-height: 1;
-}
-
-.progress-insights-stat-label {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--color-text-secondary);
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 @media (max-width: 768px) {
   .parent-review-habits {
     grid-template-columns: 1fr;
-  }
-
-  .progress-insights-banner {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-  }
-}
-
-@media (max-width: 600px) {
-  .progress-insights-stats {
-    grid-template-columns: 1fr;
-    gap: 12px;
   }
 }
 
@@ -3788,10 +3645,6 @@
   .btn-resume {
     width: 100%;
     text-align: center;
-  }
-
-  .progress-insights-stats {
-    gap: 12px;
   }
 
   .modal-actions {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
 import 'katex/dist/katex.min.css'
 import './App.css'
@@ -82,7 +82,6 @@ type DashboardStats = {
     todayMs: number
     yesterdayMs: number
   }
-  progressInsights?: ProgressInsights
   learningCoach?: LearningCoach
 }
 
@@ -147,15 +146,6 @@ type LearningCoach = {
   masteryBySubject: MasterySubject[]
   parentReview: ParentReview
   habitSignals: HabitSignal[]
-}
-
-type ProgressInsights = {
-  trend: 'improving' | 'declining' | 'steady' | 'new'
-  trendLabel: string
-  recentAccuracy: number
-  bestAccuracy: number
-  totalQuestionsAnswered: number
-  message: string
 }
 
 type InProgressSession = {
@@ -491,17 +481,38 @@ function defaultInsightsMessage(): InsightResponse {
 }
 
 /* ── Activity Heatmap Component ────────────────────────────── */
-function getWindowStartDate(monthCount: number, now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth() - (monthCount - 1), 1)
+type HeatmapWindow = 3 | 6 | 12
+
+function getQuarterStartMonth(now: Date): number {
+  return Math.floor(now.getMonth() / 3) * 3
 }
 
-function getWindowEndDate(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
+function getQuarterWindowRange(windowSize: HeatmapWindow, now: Date): { startDate: Date; endDate: Date } {
+  const quarterStartMonth = getQuarterStartMonth(now)
+  const currentQuarterStart = new Date(now.getFullYear(), quarterStartMonth, 1)
+
+  if (windowSize === 3) {
+    return {
+      startDate: currentQuarterStart,
+      endDate: new Date(now.getFullYear(), quarterStartMonth + 3, 0),
+    }
+  }
+
+  if (windowSize === 6) {
+    return {
+      startDate: currentQuarterStart,
+      endDate: new Date(now.getFullYear(), quarterStartMonth + 6, 0),
+    }
+  }
+
+  return {
+    startDate: new Date(now.getFullYear(), quarterStartMonth - 3, 1),
+    endDate: new Date(now.getFullYear(), quarterStartMonth + 9, 0),
+  }
 }
 
-function getWeekCountForWindow(monthCount: number, now: Date): number {
-  const startDate = getWindowStartDate(monthCount, now)
-  const endDate = getWindowEndDate(now)
+function getWeekCountForWindow(windowSize: HeatmapWindow, now: Date): number {
+  const { startDate, endDate } = getQuarterWindowRange(windowSize, now)
   const startGridDate = new Date(startDate)
   startGridDate.setDate(startDate.getDate() - startDate.getDay())
   const endGridDate = new Date(endDate)
@@ -517,11 +528,11 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
   const dayLabelWidth = 42
   const now = useMemo(() => new Date(), [])
 
-  const monthsToShow = useMemo(() => {
-    if (containerWidth <= 0) return 12
+  const windowSize = useMemo<HeatmapWindow>(() => {
+    if (containerWidth <= 0) return 3
 
     const availableWidth = Math.max(containerWidth - dayLabelWidth - 24, 0)
-    for (const option of [12, 6, 3]) {
+    for (const option of [12, 6, 3] as HeatmapWindow[]) {
       const weekCount = getWeekCountForWindow(option, now)
       const requiredWidth = weekCount * cellSize + Math.max(weekCount - 1, 0) * cellGap
       if (requiredWidth <= availableWidth) return option
@@ -529,21 +540,34 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
     return 3
   }, [containerWidth, now])
 
-  const startDate = getWindowStartDate(monthsToShow, now)
-  const endDate = getWindowEndDate(now)
+  const { startDate, endDate } = useMemo(() => getQuarterWindowRange(windowSize, now), [windowSize, now])
   const startGridDate = new Date(startDate)
   startGridDate.setDate(startDate.getDate() - startDate.getDay())
   const endGridDate = new Date(endDate)
   endGridDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateWidth = (): void => {
       setContainerWidth(containerRef.current?.clientWidth ?? 0)
     }
 
     updateWidth()
-    window.addEventListener('resize', updateWidth)
-    return () => window.removeEventListener('resize', updateWidth)
+    const observer = typeof ResizeObserver !== 'undefined' && containerRef.current
+      ? new ResizeObserver(updateWidth)
+      : null
+
+    if (observer && containerRef.current) {
+      observer.observe(containerRef.current)
+    } else {
+      window.addEventListener('resize', updateWidth)
+    }
+
+    return () => {
+      observer?.disconnect()
+      if (!observer) {
+        window.removeEventListener('resize', updateWidth)
+      }
+    }
   }, [])
 
   const practiceByDate = useMemo(() => new Map(activityDays.map((entry) => [entry.date, entry.practiceMs])), [activityDays])
@@ -569,7 +593,7 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
     weeks.push(cells.slice(i, i + 7))
   }
 
-  const visibleMonths = Array.from({ length: monthsToShow }, (_, index) =>
+  const visibleMonths = Array.from({ length: windowSize }, (_, index) =>
     new Date(startDate.getFullYear(), startDate.getMonth() + index, 1).toLocaleString('en-US', { month: 'short' }),
   )
   const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', '']
@@ -1587,7 +1611,6 @@ function App() {
     const activityDays = dashStats?.activityDays ?? []
     const readingLaunchInProgress = launchState?.subject === 'Reading' && launchState.mode === 'start'
     const learningCoach = dashStats?.learningCoach
-    const progressInsights = dashStats?.progressInsights
     const dailyPractice = dashStats?.dailyPractice
     const dailyTargetMs = dailyPractice?.targetMs ?? 60 * 60 * 1000
     const todayProgress = Math.min(100, Math.round(((dailyPractice?.todayMs ?? 0) / dailyTargetMs) * 100))
@@ -1655,29 +1678,6 @@ function App() {
             <p className="welcome-date">{formatCurrentDate()}</p>
             <h2 className="welcome-title">{getGreeting(selectedUserName)}</h2>
           </div>
-
-          {progressInsights && (
-            <div className={`progress-insights-banner trend-${progressInsights.trend}`}>
-              <div className="progress-insights-copy">
-                <p className="progress-insights-kicker">{progressInsights.trendLabel}</p>
-                <p className="progress-insights-message">{progressInsights.message}</p>
-              </div>
-              <div className="progress-insights-stats">
-                <div className="progress-insights-stat">
-                  <span className="progress-insights-stat-value">{progressInsights.recentAccuracy}%</span>
-                  <span className="progress-insights-stat-label">Recent</span>
-                </div>
-                <div className="progress-insights-stat">
-                  <span className="progress-insights-stat-value">{progressInsights.bestAccuracy}%</span>
-                  <span className="progress-insights-stat-label">Best</span>
-                </div>
-                <div className="progress-insights-stat">
-                  <span className="progress-insights-stat-value">{progressInsights.totalQuestionsAnswered}</span>
-                  <span className="progress-insights-stat-label">Answered</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="dashboard-top-grid">
             {dailyPractice && (
