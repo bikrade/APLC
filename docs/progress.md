@@ -93,3 +93,18 @@
   - Reading speed scoring corrected around a `170 WPM` target, with only meaningfully higher speeds treated as very fast
   - Very fast reading can switch the final assessment from free-text summary to a multiple-choice comprehension quiz with a warning about skimming risk
   - Test coverage expanded across server integration, client helper tests, and Playwright reading-quiz E2E flow
+- Learning coach layer added to the landing page:
+  - Weekly mission cards give Adi a small, visible learning path for the current week
+  - Habit signals summarize first-try success, independence, and working pace
+  - Subject mastery cards classify each area as mastered, developing, or fragile
+  - Revisit queue highlights the next weak spots worth practicing again
+  - Parent review panel surfaces celebration points, watchlist items, and suggested support moves on the same dashboard
+- Session reflection UX expanded:
+  - Reading pages can show light comprehension checkpoint prompts during the session
+  - Session summary now closes with celebrate / grow next / tomorrow coaching cards instead of just raw stats
+- Dashboard API expanded:
+  - `GET /dashboard/:userId` now returns a `learningCoach` payload for the landing-page coaching modules
+- Release visibility added:
+  - Top navigation now shows an elegant product version badge generated from git commit history
+  - Clicking the badge reveals a compact summary of the most recent shipped changes
+  - Build/dev/test flows now sync `client/src/generated/releaseInfo.ts` automatically via `scripts/generate-release-info.mjs`

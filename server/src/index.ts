@@ -210,6 +210,62 @@ type SubjectInsight = {
   }
 }
 
+type MissionStatus = 'done' | 'in-progress' | 'up-next'
+type MasteryStage = 'mastered' | 'developing' | 'fragile'
+
+type WeeklyMissionItem = {
+  id: string
+  label: string
+  detail: string
+  status: MissionStatus
+}
+
+type RevisitItem = {
+  subject: Subject
+  skill: string
+  reason: string
+  action: string
+}
+
+type MasterySkill = {
+  key: string
+  label: string
+  stage: MasteryStage
+  accuracy: number | null
+  evidenceCount: number
+}
+
+type MasterySubject = {
+  subject: Subject
+  summary: string
+  overallStage: MasteryStage
+  skills: MasterySkill[]
+}
+
+type ParentReview = {
+  celebration: string[]
+  watchlist: string[]
+  supportMoves: string[]
+}
+
+type HabitSignal = {
+  label: string
+  value: string
+  tone: 'strong' | 'steady' | 'watch'
+}
+
+type LearningCoach = {
+  weeklyMission: {
+    title: string
+    subtitle: string
+    items: WeeklyMissionItem[]
+  }
+  revisitQueue: RevisitItem[]
+  masteryBySubject: MasterySubject[]
+  parentReview: ParentReview
+  habitSignals: HabitSignal[]
+}
+
 type AuthenticatedRequest = Request & {
   authSession?: {
     email: string
@@ -450,6 +506,234 @@ function getSubjectSessionTrend(subject: Subject, sessions: SessionRecord[]): In
   if (delta >= 6) return 'improving'
   if (delta <= -6) return 'declining'
   return 'steady'
+}
+
+function getMasteryStage(score: number | null, evidenceCount: number): MasteryStage {
+  if (score === null || evidenceCount < 2) return 'developing'
+  if (score >= 85 && evidenceCount >= 3) return 'mastered'
+  if (score < 65) return 'fragile'
+  return 'developing'
+}
+
+function formatSubjectLabel(subject: Subject): string {
+  return subject.toLowerCase()
+}
+
+function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
+  const completedSessions = allSessions
+    .filter((session) => session.status === 'completed')
+    .sort((a, b) => new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime())
+  const subjects: Subject[] = ['Multiplication', 'Division', 'Reading']
+  const now = new Date()
+  const weekStart = new Date(now)
+  weekStart.setDate(weekStart.getDate() - 6)
+
+  const completedThisWeek = completedSessions.filter((session) => new Date(session.completedAt ?? session.startedAt).getTime() >= weekStart.getTime())
+  const completedThisWeekBySubject = Object.fromEntries(subjects.map((subject) => [subject, completedThisWeek.filter((session) => session.subject === subject).length])) as Record<Subject, number>
+
+  const masteryBySubject: MasterySubject[] = subjects.map((subject) => {
+    const subjectSessions = completedSessions.filter((session) => session.subject === subject)
+
+    if (subject === 'Reading') {
+      const readingAssessments = subjectSessions
+        .map((session) => session.answers.find((answer) => answer.completed && typeof answer.readingScore === 'number'))
+        .filter((answer): answer is NonNullable<typeof answer> => Boolean(answer))
+
+      const comprehensionAvg = readingAssessments.length > 0
+        ? Math.round(readingAssessments.reduce((sum, answer) => sum + (answer.comprehensionScore ?? 0), 0) / readingAssessments.length * 10)
+        : null
+      const paceAvg = readingAssessments.length > 0
+        ? Math.round(readingAssessments.reduce((sum, answer) => sum + (answer.readingWpm ?? 0), 0) / readingAssessments.length)
+        : null
+      const staminaScore = readingAssessments.length > 0
+        ? Math.round(readingAssessments.reduce((sum, answer) => sum + (answer.readingScore ?? 0), 0) / readingAssessments.length * 10)
+        : null
+
+      const comprehensionStage = getMasteryStage(comprehensionAvg, readingAssessments.length)
+      const paceStage = paceAvg === null || readingAssessments.length < 2
+        ? 'developing'
+        : paceAvg >= 160 && paceAvg <= 180
+          ? 'mastered'
+          : paceAvg < 145
+            ? 'fragile'
+            : 'developing'
+      const staminaStage = getMasteryStage(staminaScore, readingAssessments.length)
+      const overallScore = average([comprehensionAvg ?? 0, paceAvg !== null ? Math.min(100, Math.round((paceAvg / 170) * 100)) : 0, staminaScore ?? 0].filter((value) => value > 0))
+      const overallStage = getMasteryStage(overallScore, readingAssessments.length)
+
+      return {
+        subject,
+        overallStage,
+        summary: readingAssessments.length > 0
+          ? `Reading is ${overallStage === 'mastered' ? 'settling into a strong groove' : overallStage === 'fragile' ? 'still feeling inconsistent' : 'developing nicely'}, especially around comprehension and pace control.`
+          : 'Reading needs a few completed sessions before mastery patterns become reliable.',
+        skills: [
+          { key: 'reading-comprehension', label: 'Comprehension', stage: comprehensionStage, accuracy: comprehensionAvg, evidenceCount: readingAssessments.length },
+          { key: 'reading-pace', label: 'Pace Control', stage: paceStage, accuracy: paceAvg !== null ? Math.min(100, Math.round((paceAvg / 170) * 100)) : null, evidenceCount: readingAssessments.length },
+          { key: 'reading-stamina', label: 'Reading Quality', stage: staminaStage, accuracy: staminaScore, evidenceCount: readingAssessments.length },
+        ],
+      }
+    }
+
+    const skillStats = new Map<string, { total: number; correct: number }>()
+    for (const session of subjectSessions) {
+      for (const answer of session.answers) {
+        if (!answer.completed) continue
+        const question = session.questions[answer.questionIndex]
+        const key = question?.type ?? 'mixed'
+        const current = skillStats.get(key) ?? { total: 0, correct: 0 }
+        current.total += 1
+        if (answer.isCorrect) current.correct += 1
+        skillStats.set(key, current)
+      }
+    }
+
+    const skills = [...skillStats.entries()]
+      .map(([key, stats]) => {
+        const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : null
+        return {
+          key,
+          label: key.replace('_', ' ').replace(/^\w/, (char) => char.toUpperCase()),
+          stage: getMasteryStage(accuracy, stats.total),
+          accuracy,
+          evidenceCount: stats.total,
+        }
+      })
+      .sort((a, b) => {
+        const rank = { fragile: 0, developing: 1, mastered: 2 }
+        return rank[a.stage] - rank[b.stage]
+      })
+
+    const overallAccuracy = skills.length > 0 ? Math.round(skills.reduce((sum, skill) => sum + (skill.accuracy ?? 0), 0) / skills.length) : null
+    const overallStage = getMasteryStage(overallAccuracy, subjectSessions.length)
+
+    return {
+      subject,
+      overallStage,
+      summary: subjectSessions.length > 0
+        ? `${subject} is ${overallStage === 'mastered' ? 'showing reliable mastery' : overallStage === 'fragile' ? 'still shaky in important spots' : 'moving forward, but not stable yet'}.`
+        : `No stable mastery signal yet for ${formatSubjectLabel(subject)}.`,
+      skills,
+    }
+  })
+
+  const revisitQueue = masteryBySubject
+    .flatMap((subject) =>
+      subject.skills
+        .filter((skill) => skill.stage !== 'mastered')
+        .slice(0, 2)
+        .map((skill) => ({
+          subject: subject.subject,
+          skill: skill.label,
+          reason: skill.stage === 'fragile'
+            ? `${skill.label} has been a repeat wobble in ${formatSubjectLabel(subject.subject)}.`
+            : `${skill.label} is improving, but it still needs another calm repetition cycle.`,
+          action: subject.subject === 'Reading'
+            ? skill.label === 'Pace Control'
+              ? 'Do one careful reading session and aim for steady pace with full meaning.'
+              : 'Use the next reading session to pause after each page and say the key idea out loud.'
+            : `Start the next ${formatSubjectLabel(subject.subject)} session and take extra care on ${skill.label.toLowerCase()} questions.`,
+        }))
+    )
+    .slice(0, 4)
+
+  const weakestSubject = [...masteryBySubject].sort((a, b) => {
+    const rank = { fragile: 0, developing: 1, mastered: 2 }
+    return rank[a.overallStage] - rank[b.overallStage]
+  })[0]?.subject ?? 'Multiplication'
+
+  const revealAnswers = completedSessions.flatMap((session) => session.answers.filter((answer) => answer.completed && answer.usedReveal))
+  const totalCompletedAnswers = completedSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
+  const revealRate = totalCompletedAnswers.length > 0 ? Math.round((revealAnswers.length / totalCompletedAnswers.length) * 100) : 0
+  const firstAttemptRate = totalCompletedAnswers.length > 0
+    ? Math.round((totalCompletedAnswers.filter((answer) => answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal)).length / totalCompletedAnswers.length) * 100)
+    : 0
+  const avgResponseSeconds = totalCompletedAnswers.length > 0
+    ? Math.round(totalCompletedAnswers.reduce((sum, answer) => sum + answer.elapsedMs, 0) / totalCompletedAnswers.length / 1000)
+    : 0
+
+  const weeklyMissionItems: WeeklyMissionItem[] = [
+    {
+      id: 'consistency',
+      label: 'Build a 3-session week',
+      detail: `${completedThisWeek.length}/3 sessions completed in the last 7 days.`,
+      status: completedThisWeek.length >= 3 ? 'done' : completedThisWeek.length > 0 ? 'in-progress' : 'up-next',
+    },
+    {
+      id: 'revisit',
+      label: `Strengthen ${formatSubjectLabel(weakestSubject)}`,
+      detail: `${completedThisWeekBySubject[weakestSubject]} sessions this week in the subject that needs the most support right now.`,
+      status: completedThisWeekBySubject[weakestSubject] >= 2 ? 'done' : completedThisWeekBySubject[weakestSubject] >= 1 ? 'in-progress' : 'up-next',
+    },
+    {
+      id: 'independence',
+      label: 'Use hints before reveals',
+      detail: `Current reveal rate is ${revealRate}%. The goal is calmer independence before showing the full answer.`,
+      status: revealRate <= 10 ? 'done' : revealRate <= 20 ? 'in-progress' : 'up-next',
+    },
+  ]
+
+  const habitSignals: HabitSignal[] = [
+    {
+      label: 'First-Try Success',
+      value: `${firstAttemptRate}%`,
+      tone: firstAttemptRate >= 80 ? 'strong' : firstAttemptRate >= 65 ? 'steady' : 'watch',
+    },
+    {
+      label: 'Independence',
+      value: `${Math.max(0, 100 - revealRate)}%`,
+      tone: revealRate <= 10 ? 'strong' : revealRate <= 20 ? 'steady' : 'watch',
+    },
+    {
+      label: 'Working Pace',
+      value: avgResponseSeconds > 0 ? `${avgResponseSeconds}s avg` : 'Building',
+      tone: avgResponseSeconds > 0 && avgResponseSeconds <= 110 ? 'strong' : avgResponseSeconds > 0 && avgResponseSeconds <= 145 ? 'steady' : 'watch',
+    },
+  ]
+
+  const parentReview: ParentReview = {
+    celebration: [
+      completedThisWeek.length >= 3
+        ? 'Adi is showing healthy learning rhythm this week, which is excellent for habit formation.'
+        : completedSessions.length >= 3
+          ? 'Adi has enough completed work now for patterns to become meaningful and coachable.'
+          : 'Adi is still early in the journey, but the app is starting to gather useful learning signals.',
+      firstAttemptRate >= 75
+        ? 'First-try success is strong, which suggests growing confidence and better self-checking.'
+        : 'Adi is still learning to settle before submitting, which is normal and coachable.',
+      revealRate <= 12
+        ? 'Reveal usage is low, showing that independence is growing.'
+        : 'Adi is still leaning on full reveals more than ideal, but that is a clear target we can improve.',
+    ].slice(0, 3),
+    watchlist: [
+      ...(revealRate > 20 ? [`Reveal usage is ${revealRate}%, which may mean frustration is rising before he fully tries the problem.`] : []),
+      ...(avgResponseSeconds > 145 ? [`Average response time is ${avgResponseSeconds}s, so cognitive load may be running a little high.`] : []),
+      ...masteryBySubject
+        .filter((subject) => subject.overallStage === 'fragile')
+        .map((subject) => `${subject.subject} currently looks fragile and would benefit from short, repeated wins.`),
+    ].slice(0, 3),
+    supportMoves: [
+      'Praise calm effort, not just correct answers, especially after a hard question set.',
+      weakestSubject === 'Reading'
+        ? 'Ask Adi to tell you the main idea of each page aloud before rushing ahead.'
+        : `Invite one short ${formatSubjectLabel(weakestSubject)} session tomorrow rather than a long catch-up block.`,
+      revealRate > 20
+        ? 'When he feels stuck, encourage Hint first and Show second so he still practices thinking.'
+        : 'Keep sessions short and steady so the app stays associated with progress, not pressure.',
+    ],
+  }
+
+  return {
+    weeklyMission: {
+      title: 'This Week\'s Learning Path',
+      subtitle: 'A small set of clear wins helps Adi stay motivated, capable, and consistent.',
+      items: weeklyMissionItems,
+    },
+    revisitQueue,
+    masteryBySubject,
+    parentReview,
+    habitSignals,
+  }
 }
 
 function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): InsightPayload {
@@ -766,6 +1050,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
   const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
+    const learningCoach = buildLearningCoach(allSessions)
 
     // Total sessions
     const totalSessions = allSessions.length
@@ -892,6 +1177,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       currentStreak,
       activityDays,
       progressInsights,
+      learningCoach,
     })
 }))
 

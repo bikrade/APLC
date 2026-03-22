@@ -6,14 +6,16 @@
 - Core views: Login, Home (dashboard & insights), Session, Summary.
 - One-question-at-a-time interaction model with back navigation only.
 - Primary UX goal: engaging, Duolingo-style learning flow with immediate animated feedback.
+- Home view now includes a learning-coach layer: weekly mission, habit signals, mastery cards, revisit queue, and parent review notes.
 - Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
 - Reading sessions can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
+- Reading page views can surface short checkpoint prompts, and summary views now include a compact celebrate / grow next / tomorrow coaching strip.
 
 ## Backend
 
 - Node.js + Express + TypeScript REST API.
 - Session lifecycle endpoints: start, fetch, answer, help, reveal, pause.
-- Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap).
+- Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap) and derives a learning-coach payload for the landing page.
 - Insights endpoint derives subject-aware performance guidance from completed history across all subjects.
 - Health endpoint for operational checks.
 
@@ -69,6 +71,8 @@
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
 - Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
 - Reading UX: `170 WPM` is the target pace, speeds around that benchmark earn strong speed credit, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
+- Landing page UX: progress insights banner plus coaching panels help convert raw performance data into specific next steps without making the dashboard feel like an admin console.
+- Parent review UX: the same landing page exposes celebration, watchlist, and support-move notes so adults can quickly understand what to reinforce.
 - CSS animations: slideUp, popIn, celebBounce, fadeInOut, pulse, shake.
 - Modern dashboard with GitHub-style activity heatmap, streak tracking, and stat cards.
 
@@ -87,6 +91,7 @@
 - **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-5.
 - **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps and the same adaptive numeric complexity levels.
 - **Reading**: Story-based reading comprehension with fresh session stories, corrected pace scoring, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Overall score ≥ 7 to pass.
+- `buildLearningCoach()` in `server/src/index.ts` derives lightweight coaching structures from completed sessions only: weekly mission items, habit signals, subject mastery stages, revisit queue, and parent review notes.
 
 ## Security
 
@@ -101,7 +106,7 @@
 
 ## Testing
 
-- **Unit / integration**: Vitest + Supertest (`server/test/api.spec.ts`). Covers auth, rate limiting, adaptive math difficulty, reading summary flow, quiz flow, and answer validation.
+- **Unit / integration**: Vitest + Supertest (`server/test/api.spec.ts`). Covers auth, rate limiting, adaptive math difficulty, reading summary flow, quiz flow, dashboard coaching payloads, and answer validation.
 - **E2E**: Playwright + Chromium (`tests/e2e/app.spec.ts`). Covers Multiplication wrong-answer flow, Division session launch, and Reading quiz-mode completion for fast readers.
 - **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`):
   - **CI** (all branches): lint, build, Vitest unit tests, Playwright E2E tests.

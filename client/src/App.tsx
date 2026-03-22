@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti'
 import 'katex/dist/katex.min.css'
 import './App.css'
 import { formatMs, getAccuracyColor, getQuestionTypeBadge, renderMath } from './lib/sessionUi'
+import { releaseInfo } from './generated/releaseInfo'
 
 declare global {
   interface Window {
@@ -73,6 +74,63 @@ type DashboardStats = {
   currentStreak: number
   activityDays: string[]
   progressInsights?: ProgressInsights
+  learningCoach?: LearningCoach
+}
+
+type MissionStatus = 'done' | 'in-progress' | 'up-next'
+type MasteryStage = 'mastered' | 'developing' | 'fragile'
+
+type WeeklyMissionItem = {
+  id: string
+  label: string
+  detail: string
+  status: MissionStatus
+}
+
+type RevisitItem = {
+  subject: Subject
+  skill: string
+  reason: string
+  action: string
+}
+
+type MasterySkill = {
+  key: string
+  label: string
+  stage: MasteryStage
+  accuracy: number | null
+  evidenceCount: number
+}
+
+type MasterySubject = {
+  subject: Subject
+  summary: string
+  overallStage: MasteryStage
+  skills: MasterySkill[]
+}
+
+type ParentReview = {
+  celebration: string[]
+  watchlist: string[]
+  supportMoves: string[]
+}
+
+type HabitSignal = {
+  label: string
+  value: string
+  tone: 'strong' | 'steady' | 'watch'
+}
+
+type LearningCoach = {
+  weeklyMission: {
+    title: string
+    subtitle: string
+    items: WeeklyMissionItem[]
+  }
+  revisitQueue: RevisitItem[]
+  masteryBySubject: MasterySubject[]
+  parentReview: ParentReview
+  habitSignals: HabitSignal[]
 }
 
 type ProgressInsights = {
@@ -269,6 +327,98 @@ function getSubjectTrendMeta(trend: SubjectInsight['trend']): { label: string; i
   return { label: 'Steady', icon: '•' }
 }
 
+function getMissionStatusMeta(status: MissionStatus): { label: string; icon: string } {
+  if (status === 'done') return { label: 'Done', icon: '✓' }
+  if (status === 'in-progress') return { label: 'In Progress', icon: '↗' }
+  return { label: 'Up Next', icon: '•' }
+}
+
+function getMasteryStageMeta(stage: MasteryStage): { label: string; className: string } {
+  if (stage === 'mastered') return { label: 'Mastered', className: 'mastered' }
+  if (stage === 'fragile') return { label: 'Fragile', className: 'fragile' }
+  return { label: 'Developing', className: 'developing' }
+}
+
+function getSessionCoachSummary(
+  subject: Subject,
+  answers: AnswerState[],
+  _questions: Question[],
+  readingSummary: {
+    averageWpm: number
+    overallScore: number
+    comprehensionScore: number
+    assessmentMode: 'summary' | 'quiz'
+  },
+): { celebration: string; growthNote: string; nextStep: string } {
+  if (subject === 'Reading') {
+    if (readingSummary.comprehensionScore >= 8 && readingSummary.averageWpm >= 160) {
+      return {
+        celebration: 'You kept both meaning and momentum together in this reading session.',
+        growthNote: 'That combination is exactly what strong readers build over time: pace with real understanding.',
+        nextStep: readingSummary.averageWpm >= 190
+          ? 'Next time, keep the same quality but slow down just enough to notice the small clues before the ending.'
+          : 'Next time, keep the same care and aim for another steady read near your target pace.',
+      }
+    }
+    if (readingSummary.comprehensionScore < 7) {
+      return {
+        celebration: 'You stayed with a full story and finished the reflection, which still matters a lot.',
+        growthNote: 'The main growth area now is holding on to the important details while you read.',
+        nextStep: 'On the next reading session, pause after each page and say the main idea aloud before moving on.',
+      }
+    }
+    return {
+      celebration: 'You completed the story thoughtfully and gave the app a real signal to coach from.',
+      growthNote: 'Your reading is developing, and the next step is making the pace and the understanding feel equally steady.',
+      nextStep: 'On the next session, aim for calm pace and one strong summary that names the problem, the turning point, and the outcome.',
+    }
+  }
+
+  const completed = answers.filter((answer) => answer.completed)
+  const correct = completed.filter((answer) => answer.isCorrect).length
+  const reveals = completed.filter((answer) => answer.usedReveal).length
+  const accuracy = completed.length > 0 ? Math.round((correct / completed.length) * 100) : 0
+  const firstAttemptRate = completed.length > 0
+    ? Math.round((completed.filter((answer) => answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal)).length / completed.length) * 100)
+    : 0
+
+  if (accuracy >= 85 && reveals <= 1) {
+    return {
+      celebration: `You worked through this ${subject.toLowerCase()} set with strong independence.`,
+      growthNote: 'That usually means your method is getting more reliable, not just your final answers.',
+      nextStep: `On the next ${subject.toLowerCase()} session, keep the same calm checking and see if you can hold that first-try quality.`,
+    }
+  }
+  if (firstAttemptRate < 60) {
+    return {
+      celebration: 'You stayed in the session even when several questions pushed back, which is real learning behavior.',
+      growthNote: 'The biggest growth move now is slowing the first attempt down so fewer answers need repair.',
+      nextStep: `Next time, take one extra breath before submitting each ${subject.toLowerCase()} answer and use Hint before Show when stuck.`,
+    }
+  }
+  return {
+    celebration: `You finished a full ${subject.toLowerCase()} practice block and kept building your learning data.`,
+    growthNote: 'Your progress is moving, and the next jump will come from more first-try confidence.',
+    nextStep: `Next session, focus especially on the first 3 ${subject.toLowerCase()} questions and try to answer them cleanly on the first attempt.`,
+  }
+}
+
+function getReadingCheckpointPrompt(pageIndex: number): { title: string; prompt: string } | null {
+  if (pageIndex === 1) {
+    return {
+      title: 'Pause And Notice',
+      prompt: 'What changed on this page, and which clue feels most important so far?',
+    }
+  }
+  if (pageIndex === 3) {
+    return {
+      title: 'Think Ahead',
+      prompt: 'What does the character want most right now, and what might get in the way next?',
+    }
+  }
+  return null
+}
+
 function defaultInsightsMessage(): InsightResponse {
   return {
     hasEnoughData: false,
@@ -449,6 +599,7 @@ function ScoreGauge({ correctCount, answeredCount }: { correctCount: number; ans
 
 function App() {
   const googleButtonRef = useRef<HTMLDivElement>(null)
+  const releasePopoverRef = useRef<HTMLDivElement>(null)
   const [stage, setStage] = useState<Stage>('login')
   const [users, setUsers] = useState<User[]>([])
   const [selectedUserId, setSelectedUserId] = useState('adi')
@@ -487,6 +638,7 @@ function App() {
   const [adaptivePopup, setAdaptivePopup] = useState<AdaptiveNotification | null>(null)
   const [inputState, setInputState] = useState<'idle' | 'correct' | 'incorrect'>('idle')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false)
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
   const [launchState, setLaunchState] = useState<LaunchState>(null)
   const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
@@ -732,6 +884,19 @@ function App() {
       setPausedElapsed(currentAnswerState?.elapsedMs ?? 0)
     }
   }, [stage, viewIndex, currentAnswerState?.elapsedMs])
+
+  useEffect(() => {
+    if (!showReleaseNotes) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!releasePopoverRef.current?.contains(event.target as Node)) {
+        setShowReleaseNotes(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [showReleaseNotes])
 
   /* ── Focus input when question changes ─────────────────────── */
   useEffect(() => {
@@ -1220,7 +1385,7 @@ function App() {
     const totalWords = readingPages.reduce((sum, question) => sum + (question.wordCount ?? 0), 0)
     const finalAnswer = answers.find((_answer, index) => questions[index]?.kind === 'reading-summary')
       ?? answers.find((_answer, index) => questions[index]?.kind === 'reading-quiz')
-    const assessmentMode = questions.find((_question, index) => answers[index] === finalAnswer)?.kind === 'reading-quiz'
+    const assessmentMode: 'summary' | 'quiz' = questions.find((_question, index) => answers[index] === finalAnswer)?.kind === 'reading-quiz'
       ? 'quiz'
       : 'summary'
     const averageWpm = finalAnswer?.readingWpm ?? 0
@@ -1336,14 +1501,50 @@ function App() {
     const streak = dashStats?.currentStreak ?? 0
     const activityDays = dashStats?.activityDays ?? []
     const readingLaunchInProgress = launchState?.subject === 'Reading' && launchState.mode === 'start'
+    const learningCoach = dashStats?.learningCoach
+    const progressInsights = dashStats?.progressInsights
 
     return (
       <div className="dashboard-screen">
         {/* Nav */}
         <nav className="dashboard-nav">
-          <div className="nav-brand">
-            <img src="/adi_avatar.png" alt="Adi" className="nav-brand-avatar" />
-            APLC
+          <div className="nav-brand-wrap">
+            <div className="nav-brand">
+              <img src="/adi_avatar.png" alt="Adi" className="nav-brand-avatar" />
+              APLC
+            </div>
+            <div className="nav-release" ref={releasePopoverRef}>
+              <button
+                type="button"
+                className={`nav-release-button ${showReleaseNotes ? 'open' : ''}`}
+                onClick={() => setShowReleaseNotes((current) => !current)}
+                aria-expanded={showReleaseNotes}
+                aria-haspopup="dialog"
+              >
+                <span className="nav-release-label">{releaseInfo.displayLabel}</span>
+                <span className="nav-release-separator">•</span>
+                <span className="nav-release-sha">{releaseInfo.shortSha}</span>
+              </button>
+              {showReleaseNotes && (
+                <div className="nav-release-popover" role="dialog" aria-label="Latest release notes">
+                  <p className="nav-release-kicker">Current release</p>
+                  <p className="nav-release-title">{releaseInfo.headline}</p>
+                  <p className="nav-release-meta">
+                    {releaseInfo.displayLabel} · {releaseInfo.shortSha} · {releaseInfo.releaseDate}
+                  </p>
+                  <div className="nav-release-divider" />
+                  <p className="nav-release-section-title">Latest changes</p>
+                  <ul className="nav-release-list">
+                    {releaseInfo.changes.map((change) => (
+                      <li key={change.sha} className="nav-release-item">
+                        <span className="nav-release-item-summary">{change.summary}</span>
+                        <span className="nav-release-item-meta">{change.sha}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
           <div className="nav-user">
             {streak > 0 && (
@@ -1365,6 +1566,55 @@ function App() {
             <p className="welcome-date">{formatCurrentDate()}</p>
             <h2 className="welcome-title">{getGreeting(selectedUserName)}</h2>
           </div>
+
+          {progressInsights && (
+            <div className={`progress-insights-banner trend-${progressInsights.trend}`}>
+              <div>
+                <p className="progress-insights-kicker">{progressInsights.trendLabel}</p>
+                <p className="progress-insights-message">{progressInsights.message}</p>
+              </div>
+              <div className="progress-insights-stats">
+                <span>{progressInsights.recentAccuracy}% recent</span>
+                <span>{progressInsights.bestAccuracy}% best</span>
+                <span>{progressInsights.totalQuestionsAnswered} answered</span>
+              </div>
+            </div>
+          )}
+
+          {learningCoach && (
+            <div className="coach-grid">
+              <div className="coach-panel coach-mission-panel">
+                <h3 className="panel-title">🗺️ {learningCoach.weeklyMission.title}</h3>
+                <p className="coach-panel-subtitle">{learningCoach.weeklyMission.subtitle}</p>
+                <div className="mission-list">
+                  {learningCoach.weeklyMission.items.map((item) => {
+                    const meta = getMissionStatusMeta(item.status)
+                    return (
+                      <div key={item.id} className={`mission-item status-${item.status}`}>
+                        <div className="mission-badge">{meta.icon} {meta.label}</div>
+                        <div>
+                          <p className="mission-label">{item.label}</p>
+                          <p className="mission-detail">{item.detail}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="coach-panel">
+                <h3 className="panel-title">🌱 Learning Habits</h3>
+                <div className="habit-signal-list">
+                  {learningCoach.habitSignals.map((signal) => (
+                    <div key={signal.label} className={`habit-signal tone-${signal.tone}`}>
+                      <span className="habit-signal-label">{signal.label}</span>
+                      <span className="habit-signal-value">{signal.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Subject Selection — primary action, shown near top */}
           <div className="subjects-section">
@@ -1436,6 +1686,59 @@ function App() {
               })}
             </div>
           </div>
+
+          {learningCoach && (
+            <div className="coach-grid coach-grid-lower">
+              <div className="coach-panel">
+                <h3 className="panel-title">🧠 Skill Mastery</h3>
+                <div className="mastery-grid">
+                  {learningCoach.masteryBySubject.map((subject) => (
+                    <div key={subject.subject} className="mastery-card">
+                      <div className="mastery-card-header">
+                        <div>
+                          <p className="mastery-card-title">{subject.subject}</p>
+                          <p className="mastery-card-summary">{subject.summary}</p>
+                        </div>
+                        <span className={`mastery-stage-pill ${getMasteryStageMeta(subject.overallStage).className}`}>
+                          {getMasteryStageMeta(subject.overallStage).label}
+                        </span>
+                      </div>
+                      <div className="mastery-skill-list">
+                        {subject.skills.map((skill) => (
+                          <div key={skill.key} className="mastery-skill-row">
+                            <div>
+                              <p className="mastery-skill-label">{skill.label}</p>
+                              <p className="mastery-skill-meta">{skill.evidenceCount} signals{skill.accuracy !== null ? ` · ${skill.accuracy}%` : ''}</p>
+                            </div>
+                            <span className={`mastery-stage-chip ${getMasteryStageMeta(skill.stage).className}`}>
+                              {getMasteryStageMeta(skill.stage).label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="coach-panel">
+                <h3 className="panel-title">🔁 Practice Again Soon</h3>
+                {learningCoach.revisitQueue.length > 0 ? (
+                  <div className="revisit-list">
+                    {learningCoach.revisitQueue.map((item) => (
+                      <div key={`${item.subject}-${item.skill}`} className="revisit-item">
+                        <p className="revisit-subject">{item.subject} · {item.skill}</p>
+                        <p className="revisit-reason">{item.reason}</p>
+                        <p className="revisit-action">{item.action}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data-msg">No urgent revisit queue yet. Keep practicing to sharpen the next focus area.</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Insights */}
           {insights?.hasEnoughData && (
@@ -1569,6 +1872,32 @@ function App() {
             </div>
           )}
 
+          {learningCoach && (
+            <div className="coach-panel parent-review-panel">
+              <h3 className="panel-title">👨‍👩‍👦 Parent Review</h3>
+              <div className="parent-review-grid">
+                <div className="insight-box strengths">
+                  <p className="insight-box-title">What To Feel Good About</p>
+                  <ul className="insight-list">
+                    {learningCoach.parentReview.celebration.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+                <div className="insight-box improvements">
+                  <p className="insight-box-title">What To Watch</p>
+                  <ul className="insight-list">
+                    {learningCoach.parentReview.watchlist.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+                <div className="insight-box recommendations">
+                  <p className="insight-box-title">How To Support Him</p>
+                  <ul className="insight-list">
+                    {learningCoach.parentReview.supportMoves.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Activity Heatmap */}
           <ActivityHeatmap activityDays={activityDays} />
         </div>
@@ -1582,6 +1911,7 @@ function App() {
     const isCompleted = currentAnswerState?.completed ?? false
     const canContinueAfterFeedback = isCorrect === true || Boolean(currentAnswerState?.usedReveal || viewIndex < currentIndex)
     const isViewingPast = viewIndex < currentIndex
+    const readingCheckpoint = isReadingPage ? getReadingCheckpointPrompt(viewIndex) : null
 
     return (
       <div className="session-screen">
@@ -1722,6 +2052,12 @@ function App() {
                 <div className="reading-page-content">
                   {currentQuestion.content}
                 </div>
+                {readingCheckpoint && isCurrentQuestion && (
+                  <div className="reading-coach-card">
+                    <p className="reading-coach-kicker">{readingCheckpoint.title}</p>
+                    <p className="reading-coach-prompt">{readingCheckpoint.prompt}</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1951,6 +2287,7 @@ function App() {
 
   /* ── Render: Summary ────────────────────────────────────── */
   if (stage === 'summary') {
+    const sessionCoach = getSessionCoachSummary(sessionSubject, answers, questions, readingSummary)
     if (sessionSubject === 'Reading') {
       const targetHit = readingSummary.averageWpm >= 160 && readingSummary.averageWpm <= 180
       return (
@@ -2000,6 +2337,21 @@ function App() {
             {' '}Target reading pace is 170 WPM.
             {readingSummary.assessmentMode === 'quiz' && ' Because the pace was high, the final check switched to multiple choice.'}
             {readingSummary.warning && ` ${readingSummary.warning}`}
+          </div>
+
+          <div className="session-coach-summary">
+            <div className="coach-summary-card">
+              <p className="coach-summary-label">Celebrate</p>
+              <p className="coach-summary-copy">{sessionCoach.celebration}</p>
+            </div>
+            <div className="coach-summary-card">
+              <p className="coach-summary-label">Grow Next</p>
+              <p className="coach-summary-copy">{sessionCoach.growthNote}</p>
+            </div>
+            <div className="coach-summary-card">
+              <p className="coach-summary-label">Tomorrow</p>
+              <p className="coach-summary-copy">{sessionCoach.nextStep}</p>
+            </div>
           </div>
 
           <div className="summary-actions">
@@ -2056,6 +2408,21 @@ function App() {
             <span className="summary-stat-icon">👁️</span>
             <div className="summary-stat-value">{reveals}</div>
             <div className="summary-stat-label">Answers Revealed</div>
+          </div>
+        </div>
+
+        <div className="session-coach-summary">
+          <div className="coach-summary-card">
+            <p className="coach-summary-label">Celebrate</p>
+            <p className="coach-summary-copy">{sessionCoach.celebration}</p>
+          </div>
+          <div className="coach-summary-card">
+            <p className="coach-summary-label">Grow Next</p>
+            <p className="coach-summary-copy">{sessionCoach.growthNote}</p>
+          </div>
+          <div className="coach-summary-card">
+            <p className="coach-summary-label">Tomorrow</p>
+            <p className="coach-summary-copy">{sessionCoach.nextStep}</p>
           </div>
         </div>
 

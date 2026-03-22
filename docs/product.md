@@ -27,7 +27,7 @@ Phase 1 began as a dev prototype focused on multiplication and has since expande
 
 - **Multiplication**: Decimal, fraction, percentage, and mixed question types with rule-based and AI-generated questions.
 - **Division**: Same question types as Multiplication with division-specific help steps.
-- **Reading**: Story-based reading comprehension ("The Monsoon Clock", 5 pages) with pace-aware scoring, free-text summary for normal pace, and quiz-based comprehension checks for very fast reading.
+- **Reading**: Fresh AI-written story-based comprehension for every new session, with pace-aware scoring, free-text summary for normal pace, and quiz-based comprehension checks for very fast reading.
 
 Phase 1 includes:
 
@@ -38,12 +38,13 @@ Let him start a session that will include 10-15 questions (similar lesson concep
 Each session should be designed in a way to finish in 30 min. Add 10-15 questions based on the time goal.
 One-question-at-a-time practice flow, can move backwards to see previous questions, but not forward till current question done
 Answer input and validation
-Self-assessment of difficulty (1–5 scale)
 “Need help” guided learning flow
 “Show answer” option with explanation
 Tracking time spent per question
 Saving all session data locally in JSON files
 Engaging, Duolingo-style UI with animated feedback, confetti for correct answers, and encouraging animations for incorrect answers
+Landing-page learning coach with weekly goals, mastery tracking, revisit recommendations, and parent review notes
+Session-end coaching cards that celebrate wins, identify one growth target, and suggest the next short practice move
 
 This phase still avoids a full recommendation engine and heavy analytics dashboards, but it now includes live adaptive behavior across multiplication, division, and reading.
 
@@ -54,18 +55,17 @@ The app presents one question at a time
 Questions are aligned with CIS Grade 6 IB level
 Adi can type and submit an answer
 The app checks correctness and provides immediate feedback
-Adi rates the difficulty of the question on a scale of 1 to 5
 Adi can click “Need help” to receive step-by-step guidance without directly revealing the answer
 Adi can click “Show answer” to see the correct answer and explanation
 The app records:
 question type and difficulty
 Adi’s answer and correctness
 time spent on each question
-self-rated difficulty
 whether help or answer reveal was used
+whether help, retries, or answer reveal were used
 Adi cannot move to the next question until the current one is completed
 Adi can navigate back to previous questions within the session
-Each session begins with the insights from "what he is doing well" and "where he needs to improve" from his last 3 tests
+Each session and dashboard should reflect cumulative learning history, using recent sessions for trend detection and broader history for coaching stability
 If there is no enough past data, say that we need at least 3 test data 
 Use rule-based question generation or introduce AI early, use Azure Open AI using my API key
 Difficulty progression be calculated based on accuracy, first-attempt success, time, hint/reveal usage, and whether the learner needed retries or answer reveal before completing the problem
@@ -79,6 +79,8 @@ Real authentication will be done at the absolute end only the product is ready t
 Bring in an element of past performance influence future question in Phase 1 itself
 When difficulty changes, tell Adi clearly and supportively so he understands why the app is adjusting
 For reading, treat `170 WPM` as the target pace, reward reaching that pace on speed score, but warn and verify comprehension when pace climbs meaningfully above it
+The home experience should include a visible weekly learning path, habit signals, subject mastery states, a revisit queue for weak spots, and a compact parent review section on the same landing page
+The app should surface light in-flow reading coaching prompts and a short session-end coach summary so each session closes with celebration, reflection, and a next step
 
 ## Non-functional Requirements
 The UI should be clean, simple, and child-friendly with minimal distractions
@@ -90,7 +92,7 @@ The system should be stable for daily usage without crashes or data loss
 
 ## User Flows
 Primary flow:
-Adi logs in → lands on modern dashboard (sees stats, streak, heatmap) → clicks “Start Session” under Multiplication → sees first question → enters answer → receives animated feedback → rates difficulty → proceeds to next question
+Adi logs in → lands on modern dashboard (sees stats, streak, heatmap, weekly mission, mastery, parent review) → clicks “Start Session” under Multiplication → sees first question → enters answer → receives animated feedback → proceeds to next question
 
 Help flow:
 Adi is stuck → clicks “Need help” → receives step-by-step guidance → attempts solution → submits answer
@@ -101,6 +103,9 @@ Adi cannot solve → clicks “Show answer” → sees solution and explanation 
 Session flow:
 Adi completes multiple questions → session data is saved locally → next session continues fresh but can use past data later
 
+Learning coach flow:
+Adi lands on the dashboard → sees this week's learning path, current habit signals, mastery by subject, and a revisit queue → starts the most helpful next session with clear purpose
+
 Adaptive math flow:
 Adi answers quickly, correctly, and independently across multiple questions → the next questions become a little harder and the UI explains why
 Adi slows down, misses first attempts, or relies on reveals → the next questions become a little easier and the UI explains why
@@ -108,6 +113,9 @@ Adi slows down, misses first attempts, or relies on reveals → the next questio
 Adaptive reading flow:
 Adi reads in the target band → writes a summary
 Adi reads unusually fast → sees a warning and gets a short multiple-choice comprehension check instead of a summary
+
+Reflection flow:
+Adi finishes a session → sees one celebration, one growth area, and one suggested next action for tomorrow
 
 ## Celebration & Feedback UX
 - Correct answers trigger multiple varieties of Duolingo-style confetti bursts (classic, shooting stars, school pride, cascade) and an animated overlay.
@@ -117,6 +125,8 @@ Adi reads unusually fast → sees a warning and gets a short multiple-choice com
 - Timer runs live during each question, changes color when time is running out, and pauses with the session.
 - A progress bar and live score are always visible at the top of the session screen.
 - Difficulty changes are surfaced with animated, supportive popups so challenge adjustments never feel random or punitive.
+- The dashboard includes a calm coaching layer: weekly mission cards, mastery chips, revisit actions, and a parent review panel designed to be readable by both Adi and a parent.
+- Reading pages can include light checkpoint prompts that steer attention toward meaning, inference, and page-level understanding without interrupting flow too heavily.
 
 ## Observability
 - **Application Insights** (`aplc-insights`): auto-collects HTTP requests, dependencies, exceptions, and performance metrics.
@@ -135,6 +145,8 @@ Reduction in average time taken per question
 Increase in ability to handle higher difficulty questions
 Reduced reliance on “Show answer” over time
 Improved self-confidence in solving multiplication problems
+Clearer weekly learning direction across multiplication, division, and reading
+More durable progress through revisit practice on fragile skills
 
 ## UI UX requirement
 Design and build the APLC Phase 1 interface by blending the strongest qualities of Duolingo and IXL. The product should feel warm, motivating, and visually polished like Duolingo, while also staying structured, academically focused, and distraction-free like IXL. This is not a game UI and it should not feel childish. It should feel like a premium personal learning tool for a bright Grade 6 student. The overall experience must be clean, calm, encouraging, and highly usable. Every screen should focus the learner on one clear task at a time, with minimal cognitive overload. Avoid clutter, noisy layouts, excessive widgets, too many competing buttons, or anything that looks like a generic admin dashboard. The design language should use soft rounded corners, clean spacing, large readable typography, clear hierarchy, and subtle positive reinforcement. The base background should stay white or very light. Use color intentionally, not decoratively: green for success and correct answers, red for incorrect feedback or warnings, and one calm primary accent color such as blue or purple for main actions like Start, Submit, Continue, and Next. Do not overuse gradients, shadows, badges, or animations. Motion should be minimal and purposeful.

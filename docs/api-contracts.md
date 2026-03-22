@@ -54,8 +54,16 @@
 - `GET /config/auth` -> `{ googleConfigured: boolean, googleClientId: string | null }`
 - `POST /auth/google` -> `{ token, user: { email, name, picture?, userId } }`
 - `GET /auth/session` -> `{ user: { email, name, picture?, userId } }`
-- `GET /dashboard/:userId` -> `{ totalSessions, overallAccuracy, avgTimePerQuestion, currentStreak, activityDays[], progressInsights? }`
+- `GET /dashboard/:userId` -> `{ totalSessions, overallAccuracy, avgTimePerQuestion, currentStreak, activityDays[], progressInsights?, learningCoach }`
   - `progressInsights`: `{ trend: 'improving'|'declining'|'steady'|'new', trendLabel, recentAccuracy, bestAccuracy, totalQuestionsAnswered, message }` (only present when ≥1 completed session exists)
+  - `learningCoach`: landing-page coaching payload assembled from completed history
+    - `weeklyMission`: `{ title, subtitle, items[] }`
+    - `weeklyMission.items[]`: `{ id, label, detail, status: 'done'|'in-progress'|'up-next' }`
+    - `habitSignals[]`: `{ label, value, tone: 'strong'|'steady'|'watch' }`
+    - `masteryBySubject[]`: `{ subject, overallStage: 'mastered'|'developing'|'fragile', summary, skills[] }`
+    - `masteryBySubject[].skills[]`: `{ key, label, stage, accuracy, evidenceCount }`
+    - `revisitQueue[]`: `{ subject, skill, reason, action }`
+    - `parentReview`: `{ celebration[], watchlist[], supportMoves[] }`
 - `GET /sessions/in-progress/:userId` -> `{ sessions: [{ sessionId, startedAt, questionsAnswered, totalQuestions, accuracy, subject }] }`
 - `GET /insights/:userId` -> `{ hasEnoughData, message, strengths[], improvements[], recommendedFocus[], bySubject[], overall }`
   - `overall`: `{ completedSessions, totalQuestionsAnswered, strongestSubject, needsAttentionSubject, subjectSessionBreakdown }`

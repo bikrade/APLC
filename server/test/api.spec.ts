@@ -513,6 +513,182 @@ describe('APLC backend', () => {
     expect(res.body.overallAccuracy).toBe(100)
   })
 
+  test('dashboard returns learning coach guidance with missions, mastery, revisit queue, and parent review', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const now = new Date()
+    const isoDaysAgo = (daysAgo: number) => {
+      const date = new Date(now)
+      date.setUTCDate(date.getUTCDate() - daysAgo)
+      date.setUTCHours(9, 0, 0, 0)
+      return date.toISOString()
+    }
+
+    const makeMathSession = (
+      id: string,
+      startedAt: string,
+      subject: 'Multiplication' | 'Division',
+      answers: Array<{ correct: boolean; elapsedMs: number; usedReveal?: boolean; type: 'decimal' | 'fraction' | 'percentage' | 'mixed' }>,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject,
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: answers.length,
+      questions: answers.map((answer, index) => ({
+        id: `${id}-q-${index}`,
+        prompt: `Question ${index + 1}`,
+        type: answer.type,
+        kind: 'math',
+        answer: 1,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      })),
+      answers: answers.map((answer, index) => ({
+        questionId: `${id}-q-${index}`,
+        questionIndex: index,
+        completed: true,
+        usedHelp: false,
+        usedReveal: answer.usedReveal ?? false,
+        elapsedMs: answer.elapsedMs,
+        isCorrect: answer.correct,
+        attemptCount: answer.correct ? 1 : 2,
+        firstAttemptCorrect: answer.correct,
+      })),
+      totalTokensUsed: 0,
+    })
+
+    const makeReadingSession = (
+      id: string,
+      startedAt: string,
+      readingScore: number,
+      comprehensionScore: number,
+      readingWpm: number,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Reading',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 2,
+      questions: [
+        {
+          id: `${id}-page`,
+          prompt: 'Read the passage.',
+          type: 'reading_page',
+          kind: 'reading-page',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+        {
+          id: `${id}-summary`,
+          prompt: 'Summarize the passage.',
+          type: 'reading_summary',
+          kind: 'reading-summary',
+          answer: 0,
+          tolerance: 0,
+          helpSteps: [],
+          explanation: '',
+          generated: true,
+        },
+      ],
+      answers: [
+        {
+          questionId: `${id}-page`,
+          questionIndex: 0,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 95000,
+          isCorrect: true,
+        },
+        {
+          questionId: `${id}-summary`,
+          questionIndex: 1,
+          completed: true,
+          usedHelp: false,
+          usedReveal: false,
+          elapsedMs: 60000,
+          isCorrect: true,
+          readingScore,
+          comprehensionScore,
+          speedScore: 8,
+          readingWpm,
+        },
+      ],
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeMathSession(
+      'recent-multiplication',
+      isoDaysAgo(1),
+      'Multiplication',
+      [
+        { correct: true, elapsedMs: 68000, type: 'decimal' },
+        { correct: true, elapsedMs: 72000, type: 'decimal' },
+        { correct: false, elapsedMs: 150000, usedReveal: true, type: 'fraction' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeMathSession(
+      'recent-division',
+      isoDaysAgo(2),
+      'Division',
+      [
+        { correct: true, elapsedMs: 82000, type: 'fraction' },
+        { correct: true, elapsedMs: 84000, type: 'fraction' },
+        { correct: true, elapsedMs: 88000, type: 'percentage' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeReadingSession(
+      'recent-reading',
+      isoDaysAgo(3),
+      8.8,
+      8.5,
+      171,
+    ))
+    await writeSession(ctx.dataRoot, makeReadingSession(
+      'recent-reading-2',
+      isoDaysAgo(4),
+      8.6,
+      8.2,
+      168,
+    ))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.learningCoach).toBeTruthy()
+    expect(res.body.learningCoach.weeklyMission.title).toBeTruthy()
+    expect(res.body.learningCoach.weeklyMission.items).toHaveLength(3)
+    expect(res.body.learningCoach.habitSignals).toHaveLength(3)
+    expect(res.body.learningCoach.masteryBySubject).toHaveLength(3)
+    expect(res.body.learningCoach.parentReview.celebration.length).toBeGreaterThan(0)
+    expect(res.body.learningCoach.parentReview.supportMoves.length).toBeGreaterThan(0)
+    expect(res.body.learningCoach.revisitQueue.length).toBeGreaterThan(0)
+    expect(res.body.learningCoach.revisitQueue[0]).toEqual(expect.objectContaining({
+      subject: expect.any(String),
+      skill: expect.any(String),
+      reason: expect.any(String),
+      action: expect.any(String),
+    }))
+
+    const multiplication = res.body.learningCoach.masteryBySubject.find((item: { subject: string }) => item.subject === 'Multiplication')
+    const reading = res.body.learningCoach.masteryBySubject.find((item: { subject: string }) => item.subject === 'Reading')
+
+    expect(multiplication.overallStage).not.toBe('mastered')
+    expect(reading.skills).toHaveLength(3)
+    expect(reading.skills.some((skill: { label: string }) => skill.label === 'Pace Control')).toBe(true)
+  })
+
   test('insights returns enriched overall and per-subject guidance', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
