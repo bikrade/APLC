@@ -453,25 +453,68 @@ function computeSpeedScore(wpm: number): number {
   return 0
 }
 
-function computeSummaryComprehensionScore(summaryText: string, keywordGroups: string[][]): number {
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+}
+
+function countSentences(value: string): number {
+  return value.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length
+}
+
+function computeSummaryRubric(summaryText: string, keywordGroups: string[][]): {
+  score: number
+  coveredGroups: number
+  structureScore: number
+  detailScore: number
+  explanation: string
+} {
   const normalized = summaryText.toLowerCase()
   const wordCount = countWords(summaryText)
   const coveredGroups = keywordGroups.filter((group) =>
     group.some((keyword) => normalized.includes(keyword.toLowerCase())),
   ).length
 
-  let score = 0
-  if (coveredGroups >= 8) score = 10
-  else if (coveredGroups >= 7) score = 9
-  else if (coveredGroups >= 6) score = 8
-  else if (coveredGroups >= 5) score = 7
-  else if (coveredGroups >= 4) score = 6
-  else if (coveredGroups >= 3) score = 4
-  else if (coveredGroups >= 2) score = 2
+  const normalizedLoose = normalizeText(summaryText)
+  const sentenceCount = countSentences(summaryText)
+  const detailAnchors = ['because', 'so', 'but', 'then', 'after', 'before', 'finally', 'when', 'while']
+  const detailHits = detailAnchors.filter((token) => normalizedLoose.includes(` ${token} `)).length
 
-  if (wordCount < 40) score = Math.max(0, score - 2)
-  if (wordCount > 130) score = Math.max(0, score - 1)
-  return score
+  let ideaCoverageScore = 0
+  if (coveredGroups >= 8) ideaCoverageScore = 10
+  else if (coveredGroups >= 7) ideaCoverageScore = 9
+  else if (coveredGroups >= 6) ideaCoverageScore = 8
+  else if (coveredGroups >= 5) ideaCoverageScore = 7
+  else if (coveredGroups >= 4) ideaCoverageScore = 6
+  else if (coveredGroups >= 3) ideaCoverageScore = 4
+  else if (coveredGroups >= 2) ideaCoverageScore = 2
+
+  let structureScore = 0
+  if (wordCount >= 70 && wordCount <= 130) structureScore += 2
+  else if (wordCount >= 50 && wordCount <= 140) structureScore += 1
+  if (sentenceCount >= 3) structureScore += 1
+  if (sentenceCount >= 4) structureScore += 1
+
+  let detailScore = 0
+  if (detailHits >= 2) detailScore += 1
+  if (coveredGroups >= 5 && detailHits >= 3) detailScore += 1
+
+  const rawScore = Math.round((ideaCoverageScore * 0.7) + (Math.min(4, structureScore + detailScore) * 0.75))
+  const score = Math.max(0, Math.min(10, rawScore))
+
+  const explanation =
+    coveredGroups >= 7 && structureScore >= 2
+      ? 'The summary captured the main arc and organized the ideas clearly.'
+      : coveredGroups >= 5
+        ? 'The summary captured part of the story, but it still needs a clearer beginning, problem, and outcome.'
+        : 'The summary is too thin to show the full story arc yet.'
+
+  return {
+    score,
+    coveredGroups,
+    structureScore,
+    detailScore,
+    explanation,
+  }
 }
 
 function computeQuizComprehensionScore(selectedOptions: number[], quizItems: ReadingQuizItem[]): { score: number; correctCount: number; totalCount: number } {
@@ -521,7 +564,8 @@ export function evaluateReadingSummary(
 } {
   const averageWpm = computeReadingWpm(questions, answers)
   const metadata = getStoryMetadata(questions)
-  const comprehensionScore = computeSummaryComprehensionScore(summaryText, metadata.keywordGroups)
+  const rubric = computeSummaryRubric(summaryText, metadata.keywordGroups)
+  const comprehensionScore = rubric.score
   const speedScore = computeSpeedScore(averageWpm)
   const overallScore = Math.max(0, Math.min(10, Math.round((comprehensionScore * 0.7) + (speedScore * 0.3))))
   const speedMessage = buildSpeedMessage(averageWpm)
@@ -531,10 +575,10 @@ export function evaluateReadingSummary(
 
   const comprehensionMessage =
     comprehensionScore >= 8
-      ? 'Your summary captured the core characters, the main problem, and the community response very well.'
+      ? `${rubric.explanation} It included the key characters, the problem, and how things changed.`
       : comprehensionScore >= 6
-        ? 'Your summary captured some important ideas, but it missed a few key story details.'
-        : 'Your summary needs more of the main events, characters, and outcome from the story.'
+        ? `${rubric.explanation} Add one or two stronger details from the middle of the story.`
+        : `${rubric.explanation} Name the main character, the main problem, and what changed by the end.`
 
   return {
     mode: 'summary',

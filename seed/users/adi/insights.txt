@@ -1,8 +1,2 @@
-Message: Insights generated from the last 3 completed sessions.
-
-[Going Well]
-- Solid accuracy trend (92%).
-- Low answer reveal usage in recent sessions.
-
-[Focus Areas]
-- Average time is 157s. Break each question into smaller steps to speed up.
+Seed insight file intentionally reset.
+Live insight payloads should be regenerated from completed sessions so stale seed summaries do not override current learner signals.

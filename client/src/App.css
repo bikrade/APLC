@@ -485,6 +485,13 @@
   color: #1f2437;
 }
 
+.dashboard-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
 .daily-practice-panel {
   background: var(--color-white);
   border-radius: 20px;
@@ -508,6 +515,13 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-muted);
+}
+
+.daily-practice-tier-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .daily-practice-summary {
@@ -555,6 +569,44 @@
 
 .daily-practice-fill.yesterday {
   background: linear-gradient(90deg, #1cb0f6, #7dd3fc);
+}
+
+.best-next-step-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 16px;
+  align-items: center;
+  background: linear-gradient(135deg, #fffdf4 0%, #fff8e6 100%);
+  border: 2px solid rgba(245, 158, 11, 0.18);
+  border-radius: 20px;
+  padding: 18px 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.best-next-step-copy {
+  min-width: 0;
+}
+
+.best-next-step-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.best-next-step-reason,
+.best-next-step-cta {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.best-next-step-cta {
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 
 /* Stats Row */
@@ -870,6 +922,15 @@
 .revisit-action {
   font-weight: 700;
   color: var(--color-text-primary);
+}
+
+.revisit-due {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9a3412;
 }
 
 .parent-review-panel {
@@ -1229,6 +1290,7 @@
   padding: 22px 24px 18px;
   box-shadow: var(--shadow-sm);
   border: 2px solid var(--color-border);
+  height: 100%;
 }
 
 .heatmap-chart {
@@ -3018,6 +3080,11 @@
     grid-template-columns: 1fr;
   }
 
+  .dashboard-top-grid,
+  .best-next-step-panel {
+    grid-template-columns: 1fr;
+  }
+
   .progress-insights-banner {
     flex-direction: column;
     align-items: flex-start;
@@ -3037,6 +3104,11 @@
 
   .insights-overview {
     grid-template-columns: 1fr;
+  }
+
+  .daily-practice-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .subject-insights-grid {

@@ -41,8 +41,6 @@ const clientDistDir = path.resolve(process.cwd(), '../client/dist')
 const clientIndexPath = path.join(clientDistDir, 'index.html')
 const USER_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i
 const SESSION_ID_PATTERN = /^\d{8}-\d{6}-(Multiplication|Division|Reading)$/
-const DAILY_TARGET_MS = 60 * 60 * 1000
-
 type RateLimitEntry = {
   count: number
   resetAt: number
@@ -242,6 +240,7 @@ type RevisitItem = {
   skill: string
   reason: string
   action: string
+  dueLabel?: string
 }
 
 type MasterySkill = {
@@ -272,6 +271,12 @@ type HabitSignal = {
 }
 
 type LearningCoach = {
+  bestNextStep?: {
+    subject: Subject
+    title: string
+    reason: string
+    cta: string
+  }
   weeklyMission: {
     title: string
     subtitle: string
@@ -281,6 +286,43 @@ type LearningCoach = {
   masteryBySubject: MasterySubject[]
   parentReview: ParentReview
   habitSignals: HabitSignal[]
+}
+
+function detectMathMisconception(question: SessionRecord['questions'][number], userAnswer: number, correctAnswer: number): string | undefined {
+  if (!Number.isFinite(userAnswer) || !Number.isFinite(correctAnswer)) return undefined
+  const prompt = question.prompt.toLowerCase()
+  const diff = Math.abs(userAnswer - correctAnswer)
+  const roundedTolerance = Math.max(question.tolerance ?? 0.01, 0.02)
+
+  if (question.type === 'decimal') {
+    const shiftedUp = Math.abs(userAnswer * 10 - correctAnswer) <= roundedTolerance || Math.abs(userAnswer * 100 - correctAnswer) <= roundedTolerance
+    const shiftedDown = Math.abs(userAnswer - correctAnswer * 10) <= roundedTolerance || Math.abs(userAnswer - correctAnswer * 100) <= roundedTolerance
+    if (shiftedUp || shiftedDown) return 'Decimal place value'
+  }
+
+  if (question.type === 'percentage') {
+    if (prompt.includes('%') && (Math.abs(userAnswer - (correctAnswer / 100)) <= roundedTolerance || Math.abs(userAnswer * 100 - correctAnswer) <= roundedTolerance)) {
+      return 'Percent to decimal conversion'
+    }
+  }
+
+  if (question.type === 'fraction' || question.type === 'mixed') {
+    if (diff <= 0.2 || Math.abs(userAnswer - Math.round(userAnswer)) <= roundedTolerance) {
+      return question.type === 'fraction' ? 'Fraction procedure' : 'Fraction conversion'
+    }
+  }
+
+  if (diff <= 1 || diff / Math.max(1, Math.abs(correctAnswer)) <= 0.1) {
+    return 'Careless arithmetic'
+  }
+
+  return 'Operation setup'
+}
+
+function getSessionRecencyLabel(daysAgo: number): string {
+  if (daysAgo <= 2) return 'ready tomorrow'
+  if (daysAgo <= 7) return 'ready this week'
+  return 'ready now'
 }
 
 type AuthenticatedRequest = Request & {
@@ -634,11 +676,40 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
     }
   })
 
+  const misconceptionCounts = new Map<string, number>()
+  for (const session of completedSessions) {
+    for (const answer of session.answers) {
+      if (!answer.completed || !answer.misconceptionTag) continue
+      const key = `${session.subject}:${answer.misconceptionTag}`
+      misconceptionCounts.set(key, (misconceptionCounts.get(key) ?? 0) + 1)
+    }
+  }
+
   const revisitQueue = masteryBySubject
-    .flatMap((subject) =>
-      subject.skills
+    .flatMap((subject) => {
+      const recentSubjectSession = completedSessions.find((session) => session.subject === subject.subject)
+      const daysAgo = recentSubjectSession
+        ? Math.max(0, Math.round((Date.now() - new Date(recentSubjectSession.completedAt ?? recentSubjectSession.startedAt).getTime()) / 86400000))
+        : 7
+
+      const misconceptionEntries = [...misconceptionCounts.entries()]
+        .filter(([key]) => key.startsWith(`${subject.subject}:`))
+        .sort((a, b) => b[1] - a[1])
+
+      const misconceptionItems = misconceptionEntries.slice(0, 1).map(([key, count]) => {
+        const label = key.split(':')[1] ?? 'Core skill'
+        return {
+          subject: subject.subject,
+          skill: label,
+          reason: `${label} has shown up ${count} time${count === 1 ? '' : 's'} recently and should be revisited before it hardens.`,
+          action: `Start a short ${formatSubjectLabel(subject.subject)} guided session and slow down on ${label.toLowerCase()} decisions.`,
+          dueLabel: getSessionRecencyLabel(daysAgo),
+        }
+      })
+
+      const masteryItems = subject.skills
         .filter((skill) => skill.stage !== 'mastered')
-        .slice(0, 2)
+        .slice(0, misconceptionItems.length > 0 ? 1 : 2)
         .map((skill) => ({
           subject: subject.subject,
           skill: skill.label,
@@ -650,8 +721,11 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
               ? 'Do one careful reading session and aim for steady pace with full meaning.'
               : 'Use the next reading session to pause after each page and say the key idea out loud.'
             : `Start the next ${formatSubjectLabel(subject.subject)} session and take extra care on ${skill.label.toLowerCase()} questions.`,
+          dueLabel: getSessionRecencyLabel(daysAgo),
         }))
-    )
+
+      return [...misconceptionItems, ...masteryItems]
+    })
     .slice(0, 4)
 
   const weakestSubject = [...masteryBySubject].sort((a, b) => {
@@ -672,7 +746,7 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
   const weeklyMissionItems: WeeklyMissionItem[] = [
     {
       id: 'consistency',
-      label: 'Build a 3-session week',
+      label: 'Keep a 3-session rhythm',
       detail: `${completedThisWeek.length}/3 sessions completed in the last 7 days.`,
       status: completedThisWeek.length >= 3 ? 'done' : completedThisWeek.length > 0 ? 'in-progress' : 'up-next',
     },
@@ -689,6 +763,20 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
       status: revealRate <= 10 ? 'done' : revealRate <= 20 ? 'in-progress' : 'up-next',
     },
   ]
+
+  const bestNextStep = revisitQueue[0]
+    ? {
+        subject: revisitQueue[0].subject,
+        title: `Best next step: ${revisitQueue[0].subject} · ${revisitQueue[0].skill}`,
+        reason: revisitQueue[0].reason,
+        cta: revisitQueue[0].action,
+      }
+    : {
+        subject: weakestSubject,
+        title: `Best next step: short ${formatSubjectLabel(weakestSubject)} session`,
+        reason: 'A short, calm session is the best way to keep momentum without overload.',
+        cta: `Start one guided ${formatSubjectLabel(weakestSubject)} session today.`,
+      }
 
   const habitSignals: HabitSignal[] = [
     {
@@ -741,6 +829,7 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
   }
 
   return {
+    bestNextStep,
     weeklyMission: {
       title: 'This Week\'s Learning Path',
       subtitle: 'A small set of clear wins helps Adi stay motivated, capable, and consistent.',
@@ -801,6 +890,7 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
     let wpmTotal = 0
     let readingSamples = 0
     const questionTypeStats = new Map<string, { total: number; correct: number }>()
+    const misconceptionStats = new Map<string, number>()
 
     for (const session of subjectSessions) {
       for (const answer of session.answers) {
@@ -827,6 +917,10 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
           questionTypeStats.set(question.type, current)
         }
 
+        if (answer.misconceptionTag) {
+          misconceptionStats.set(answer.misconceptionTag, (misconceptionStats.get(answer.misconceptionTag) ?? 0) + 1)
+        }
+
         if (subject === 'Reading' && typeof answer.readingScore === 'number') {
           readingScoreTotal += answer.readingScore
           comprehensionTotal += answer.comprehensionScore ?? 0
@@ -851,6 +945,7 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
     const strongestType = [...questionTypeStats.entries()]
       .filter(([, value]) => value.total >= 2)
       .sort((a, b) => (b[1].correct / b[1].total) - (a[1].correct / a[1].total))[0]
+    const topMisconception = [...misconceptionStats.entries()].sort((a, b) => b[1] - a[1])[0]
 
     const strengths: string[] = []
     const focusAreas: string[] = []
@@ -893,6 +988,9 @@ function buildInsightsPayloadFromSessions(allSessions: SessionRecord[]): Insight
         const typeLabel = weakestType[0].replace('_', ' ')
         const niceTypeLabel = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)
         focusAreas.push(`${niceTypeLabel} questions need the most attention in ${subject.toLowerCase()}.`)
+      }
+      if (topMisconception) {
+        focusAreas.push(`${topMisconception[0]} is the main mistake pattern showing up in ${subject.toLowerCase()} right now.`)
       }
 
       headline = accuracy !== null
@@ -1065,6 +1163,7 @@ app.use('/session/:userId/:sessionId/answer', rateLimit('answer', 120, 60 * 1000
 // Dashboard stats endpoint
 app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params
+    const profile = await readUserProfile(userId)
   const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
     const learningCoach = buildLearningCoach(allSessions)
@@ -1205,6 +1304,8 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       }
     }
 
+    const dailyTargetMinutes = profile.dailyHabitTargetMinutes ?? 15
+
     res.json({
       totalSessions,
       overallAccuracy,
@@ -1212,7 +1313,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       currentStreak,
       activityDays,
       dailyPractice: {
-        targetMs: DAILY_TARGET_MS,
+        targetMs: dailyTargetMinutes * 60 * 1000,
         todayMs: todayPracticeMs,
         yesterdayMs: yesterdayPracticeMs,
       },
@@ -1502,6 +1603,7 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
   answerState.usedReveal = true
   answerState.completed = true
   answerState.isCorrect = false
+  answerState.misconceptionTag = 'Answer reveal needed'
   answerState.attemptCount = Math.max(1, answerState.attemptCount ?? 0)
   answerState.firstAttemptCorrect = false
   answerState.elapsedMs = Math.max(answerState.elapsedMs ?? 0, Math.max(0, elapsedMs))
@@ -1671,6 +1773,16 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
   state.attemptCount = (state.attemptCount ?? 0) + 1
   state.userAnswer = parsed
   state.isCorrect = isCorrect
+  if (isCorrect) {
+    delete state.misconceptionTag
+  } else {
+    const misconceptionTag = detectMathMisconception(hydratedQuestion, parsed, hydratedQuestion.answer)
+    if (misconceptionTag) {
+      state.misconceptionTag = misconceptionTag
+    } else {
+      delete state.misconceptionTag
+    }
+  }
   let adaptiveNotification: AdaptiveNotification | null = null
   if (sessionMode === 'quiz') {
     state.completed = true

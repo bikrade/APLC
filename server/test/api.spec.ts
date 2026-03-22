@@ -587,7 +587,7 @@ describe('APLC backend', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.dailyPractice).toEqual({
-      targetMs: 60 * 60 * 1000,
+      targetMs: 15 * 60 * 1000,
       todayMs: 45 * 60 * 1000,
       yesterdayMs: 35 * 60 * 1000,
     })
@@ -753,12 +753,19 @@ describe('APLC backend', () => {
     expect(res.body.learningCoach.masteryBySubject).toHaveLength(3)
     expect(res.body.learningCoach.parentReview.celebration.length).toBeGreaterThan(0)
     expect(res.body.learningCoach.parentReview.supportMoves.length).toBeGreaterThan(0)
+    expect(res.body.learningCoach.bestNextStep).toEqual(expect.objectContaining({
+      subject: expect.any(String),
+      title: expect.any(String),
+      reason: expect.any(String),
+      cta: expect.any(String),
+    }))
     expect(res.body.learningCoach.revisitQueue.length).toBeGreaterThan(0)
     expect(res.body.learningCoach.revisitQueue[0]).toEqual(expect.objectContaining({
       subject: expect.any(String),
       skill: expect.any(String),
       reason: expect.any(String),
       action: expect.any(String),
+      dueLabel: expect.any(String),
     }))
 
     const multiplication = res.body.learningCoach.masteryBySubject.find((item: { subject: string }) => item.subject === 'Multiplication')

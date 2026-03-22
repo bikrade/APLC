@@ -101,6 +101,7 @@ type RevisitItem = {
   skill: string
   reason: string
   action: string
+  dueLabel?: string
 }
 
 type MasterySkill = {
@@ -131,6 +132,12 @@ type HabitSignal = {
 }
 
 type LearningCoach = {
+  bestNextStep?: {
+    subject: Subject
+    title: string
+    reason: string
+    cta: string
+  }
   weeklyMission: {
     title: string
     subtitle: string
@@ -380,6 +387,11 @@ function formatPracticeMinutes(ms: number): string {
   if (ms <= 0) return '0 min'
   const minutes = Math.round(ms / 60000)
   return `${minutes} min`
+}
+
+function getDailyHabitTierCopy(targetMs: number): string {
+  const targetMinutes = Math.max(1, Math.round(targetMs / 60000))
+  return `${targetMinutes} min keeps the habit alive · 30 min strong day · 45+ min stretch`
 }
 
 function getSessionCoachSummary(
@@ -1673,37 +1685,53 @@ function App() {
             </div>
           )}
 
-          {dailyPractice && (
-            <div className="daily-practice-panel">
-              <div className="daily-practice-header">
-                <div>
-                  <p className="daily-practice-kicker">Daily Practice Goal</p>
-                  <h3 className="panel-title">⏳ 60 minutes a day</h3>
+          <div className="dashboard-top-grid">
+            {dailyPractice && (
+              <div className="daily-practice-panel">
+                <div className="daily-practice-header">
+                  <div>
+                    <p className="daily-practice-kicker">Daily Practice Goal</p>
+                    <h3 className="panel-title">⏳ Build today&apos;s habit</h3>
+                    <p className="daily-practice-tier-copy">{getDailyHabitTierCopy(dailyTargetMs)}</p>
+                  </div>
+                  <p className="daily-practice-summary">
+                    Today: {formatPracticeMinutes(dailyPractice.todayMs)} · Yesterday: {formatPracticeMinutes(dailyPractice.yesterdayMs)}
+                  </p>
                 </div>
-                <p className="daily-practice-summary">
-                  Today: {formatPracticeMinutes(dailyPractice.todayMs)} · Yesterday: {formatPracticeMinutes(dailyPractice.yesterdayMs)}
-                </p>
+                <div className="daily-practice-bars">
+                  <div className="daily-practice-row">
+                    <div className="daily-practice-labels">
+                      <span>Today so far</span>
+                      <span>{formatPracticeMinutes(dailyPractice.todayMs)}</span>
+                    </div>
+                    <div className="daily-practice-track">
+                      <div className="daily-practice-fill today" style={{ width: `${todayProgress}%` }} />
+                    </div>
+                  </div>
+                  <div className="daily-practice-row">
+                    <div className="daily-practice-labels">
+                      <span>Yesterday</span>
+                      <span>{formatPracticeMinutes(dailyPractice.yesterdayMs)}</span>
+                    </div>
+                    <div className="daily-practice-track">
+                      <div className="daily-practice-fill yesterday" style={{ width: `${yesterdayProgress}%` }} />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="daily-practice-bars">
-                <div className="daily-practice-row">
-                  <div className="daily-practice-labels">
-                    <span>Today so far</span>
-                    <span>{formatPracticeMinutes(dailyPractice.todayMs)}</span>
-                  </div>
-                  <div className="daily-practice-track">
-                    <div className="daily-practice-fill today" style={{ width: `${todayProgress}%` }} />
-                  </div>
-                </div>
-                <div className="daily-practice-row">
-                  <div className="daily-practice-labels">
-                    <span>Yesterday</span>
-                    <span>{formatPracticeMinutes(dailyPractice.yesterdayMs)}</span>
-                  </div>
-                  <div className="daily-practice-track">
-                    <div className="daily-practice-fill yesterday" style={{ width: `${yesterdayProgress}%` }} />
-                  </div>
-                </div>
+            )}
+
+            <ActivityHeatmap activityDays={activityDays} />
+          </div>
+
+          {learningCoach?.bestNextStep && (
+            <div className="best-next-step-panel">
+              <div className="best-next-step-copy">
+                <p className="best-next-step-kicker">Best Next Step</p>
+                <h3 className="panel-title">🎯 {learningCoach.bestNextStep.title}</h3>
+                <p className="best-next-step-reason">{learningCoach.bestNextStep.reason}</p>
               </div>
+              <p className="best-next-step-cta">{learningCoach.bestNextStep.cta}</p>
             </div>
           )}
 
@@ -1865,6 +1893,7 @@ function App() {
                         <p className="revisit-subject">{item.subject} · {item.skill}</p>
                         <p className="revisit-reason">{item.reason}</p>
                         <p className="revisit-action">{item.action}</p>
+                        {item.dueLabel && <p className="revisit-due">{item.dueLabel}</p>}
                       </div>
                     ))}
                   </div>
@@ -1878,7 +1907,7 @@ function App() {
           {/* Insights */}
           {insights?.hasEnoughData && (
             <div className="insights-panel">
-              <h3 className="panel-title">💡 Your Insights</h3>
+              <h3 className="panel-title">💡 Detailed Insigt</h3>
               <p className="insights-summary">{insights.message}</p>
               <div className="insights-overview">
                 <div className="insights-overview-stat">
@@ -2000,7 +2029,7 @@ function App() {
 
           {!insights?.hasEnoughData && (
             <div className="insights-panel">
-              <h3 className="panel-title">💡 Insights</h3>
+              <h3 className="panel-title">💡 Detailed Insigt</h3>
               <p className="no-data-msg">
                 📊 Complete at least 3 sessions to unlock personalized insights about your strengths and areas to improve!
               </p>
@@ -2046,9 +2075,6 @@ function App() {
               </div>
             </div>
           )}
-
-          {/* Activity Heatmap */}
-          <ActivityHeatmap activityDays={activityDays} />
         </div>
       </div>
     )

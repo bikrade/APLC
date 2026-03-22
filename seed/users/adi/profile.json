@@ -1,7 +1,26 @@
 {
   "id": "adi",
   "name": "Adi",
-  "learningFocus": "placeholder",
-  "timezone": "Asia/Kolkata",
-  "notes": "Initial placeholder profile for local development scaffolding."
+  "grade": "Grade 6",
+  "curriculum": "IB",
+  "learningFocus": [
+    "multiplication fluency",
+    "division fluency",
+    "reading comprehension with steady pace"
+  ],
+  "timezone": "Asia/Singapore",
+  "preferredSessionLengthMinutes": 20,
+  "dailyHabitTargetMinutes": 15,
+  "readingTargetWpm": 170,
+  "strengths": [
+    "good persistence",
+    "can complete full sessions",
+    "responds to structured guidance"
+  ],
+  "watchouts": [
+    "may rush reading when the passage feels easy",
+    "can slow down significantly on harder math items",
+    "benefits from short wins that build confidence"
+  ],
+  "notes": "Primary learner profile for personalization during Phase 1."
 }

@@ -49,6 +49,7 @@ export interface QuestionState {
   startedAt?: number
   attemptCount?: number
   firstAttemptCorrect?: boolean
+  misconceptionTag?: string
   selectedOptions?: number[]
   readingScore?: number
   comprehensionScore?: number
@@ -79,9 +80,16 @@ export interface SessionRecord {
 export interface UserProfile {
   id: string
   name: string
-  learningFocus: string
+  learningFocus: string | string[]
   timezone: string
   notes: string
+  grade?: string
+  curriculum?: string
+  preferredSessionLengthMinutes?: number
+  dailyHabitTargetMinutes?: number
+  readingTargetWpm?: number
+  strengths?: string[]
+  watchouts?: string[]
 }
 
 export interface OpenAICallStat {
