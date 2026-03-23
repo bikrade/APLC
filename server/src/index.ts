@@ -207,6 +207,10 @@ function getSessionPracticeTimeMs(session: SessionRecord): number {
   return session.answers.reduce((sum, answer) => sum + Math.max(0, answer.elapsedMs ?? 0), 0)
 }
 
+function getSessionPracticeDate(session: SessionRecord): Date {
+  return new Date(session.completedAt ?? session.lastActivityAt ?? session.startedAt)
+}
+
 function createSessionId(subject: Subject, date = new Date()): string {
   const year = String(date.getFullYear())
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -1287,7 +1291,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
     // Activity days grouped by total practice time for the heatmap.
     const activityByDate = new Map<string, number>()
     for (const session of allSessions) {
-      const day = getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone)
+      const day = getDateKeyInTimeZone(getSessionPracticeDate(session), learnerTimeZone)
       const practiceMs = getSessionPracticeTimeMs(session)
       activityByDate.set(day, (activityByDate.get(day) ?? 0) + practiceMs)
     }
@@ -1295,10 +1299,10 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, practiceMs]) => ({ date, practiceMs }))
     const todayPracticeMs = allSessions
-      .filter((session) => getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone) === todayIso)
+      .filter((session) => getDateKeyInTimeZone(getSessionPracticeDate(session), learnerTimeZone) === todayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
     const yesterdayPracticeMs = allSessions
-      .filter((session) => getDateKeyInTimeZone(new Date(session.startedAt), learnerTimeZone) === yesterdayIso)
+      .filter((session) => getDateKeyInTimeZone(getSessionPracticeDate(session), learnerTimeZone) === yesterdayIso)
       .reduce((sum, session) => sum + getSessionPracticeTimeMs(session), 0)
 
     const latestCompletedBySubject = Object.fromEntries((['Multiplication', 'Division', 'Reading'] as Subject[]).map((subject) => {
@@ -1547,6 +1551,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     sessionMode: requestedSessionMode,
     status: 'active',
     startedAt: new Date().toISOString(),
+    lastActivityAt: new Date().toISOString(),
     currentIndex: 0,
     questions,
     answers,
@@ -1670,6 +1675,7 @@ app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
   // Accumulate tokens from hint generation
   const hintStats = flushCallStats()
   session.totalTokensUsed = (session.totalTokensUsed ?? 0) + hintStats.reduce((sum, s) => sum + s.totalTokens, 0)
+  session.lastActivityAt = new Date().toISOString()
   await saveSession(session)
   res.json({
     helpSteps,
@@ -1723,6 +1729,7 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     session.status = 'completed'
     session.completedAt = new Date().toISOString()
   }
+  session.lastActivityAt = session.completedAt ?? new Date().toISOString()
   await saveSession(session)
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
@@ -1792,6 +1799,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
         session.status = 'completed'
         session.completedAt = new Date().toISOString()
       }
+      session.lastActivityAt = session.completedAt ?? new Date().toISOString()
       await saveSession(session)
       res.json({
         isCorrect: true,
@@ -1852,6 +1860,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     state.readingWpm = readingResult.averageWpm
     session.status = 'completed'
     session.completedAt = new Date().toISOString()
+    session.lastActivityAt = session.completedAt
     await saveSession(session)
     await refreshInsightsFile(userId)
     res.json({
@@ -1927,6 +1936,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
       adaptiveNotification = maybeAdjustDifficulty(session, state, 'wrong-first-attempt')
     }
   }
+  session.lastActivityAt = session.completedAt ?? new Date().toISOString()
   await saveSession(session)
   let explanation: string
   if (sessionMode === 'quiz') {
@@ -1989,6 +1999,7 @@ app.post('/session/:userId/:sessionId/pause', asyncHandler(async (req, res) => {
     return
   }
   answerState.elapsedMs = Math.max(0, elapsedMs)
+  session.lastActivityAt = new Date().toISOString()
   await saveSession(session)
   res.json({ ok: true, answers: session.answers })
 }))

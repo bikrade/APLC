@@ -64,6 +64,7 @@ export interface SessionRecord {
   sessionMode?: SessionMode
   status: 'active' | 'completed'
   startedAt: string
+  lastActivityAt?: string
   completedAt?: string
   currentIndex: number
   questions: Question[]

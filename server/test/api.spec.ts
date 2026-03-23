@@ -612,6 +612,53 @@ describe('APLC backend', () => {
     })
   })
 
+  test('dashboard counts resumed active session time on the last activity day', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-23T02:00:00.000Z'))
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const session: SessionRecord = {
+      id: '20260322-173000-Multiplication',
+      userId: 'adi',
+      subject: 'Multiplication',
+      status: 'active',
+      startedAt: '2026-03-22T17:30:00.000Z',
+      lastActivityAt: '2026-03-23T01:40:00.000Z',
+      currentIndex: 0,
+      questions: [{
+        id: 'q-1',
+        prompt: '2 × 3',
+        type: 'decimal',
+        answer: 6,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      }],
+      answers: [{
+        questionId: 'q-1',
+        questionIndex: 0,
+        completed: false,
+        usedHelp: false,
+        usedReveal: false,
+        elapsedMs: 8 * 60 * 1000,
+      }],
+      totalTokensUsed: 0,
+    }
+
+    await writeSession(ctx.dataRoot, session)
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.dailyPractice).toEqual({
+      targetMs: 15 * 60 * 1000,
+      todayMs: 8 * 60 * 1000,
+      yesterdayMs: 0,
+    })
+  })
+
   test('dashboard trend uses the newest sessions as recent history', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
