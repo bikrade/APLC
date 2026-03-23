@@ -42,6 +42,29 @@
   --font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+:root[data-theme='dark'] {
+  --color-green-light: #2f5d1c;
+  --color-green-bg: #102414;
+  --color-blue-light: #214864;
+  --color-blue-bg: #0b2131;
+  --color-red-light: #5e2329;
+  --color-red-bg: #2a1318;
+  --color-yellow-light: #3a2c08;
+  --color-purple-light: #2b193c;
+  --color-white: #132033;
+  --color-bg: #09111f;
+  --color-surface: #132033;
+  --color-border: #22324a;
+  --color-border-strong: #38516f;
+  --color-text-primary: #edf4ff;
+  --color-text-secondary: #b7c4d8;
+  --color-text-muted: #7f91a8;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.28), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 10px 24px rgba(0,0,0,0.22), 0 4px 8px rgba(0,0,0,0.16);
+  --shadow-lg: 0 18px 40px rgba(0,0,0,0.28), 0 8px 16px rgba(0,0,0,0.2);
+  --shadow-xl: 0 28px 60px rgba(0,0,0,0.32), 0 12px 24px rgba(0,0,0,0.24);
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -55,6 +78,7 @@ body {
   color: var(--color-text-primary);
   line-height: 1.6;
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {

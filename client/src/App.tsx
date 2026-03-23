@@ -27,6 +27,7 @@ declare global {
 
 /* ── Types ─────────────────────────────────────────────────── */
 type Stage = 'login' | 'home' | 'session' | 'summary'
+type ThemeMode = 'light' | 'dark'
 type User = { id: string; name: string }
 type AuthUser = { email: string; name: string; picture?: string; userId: string }
 type Subject = 'Multiplication' | 'Division' | 'Reading'
@@ -256,7 +257,21 @@ type RevealResponse = {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 const BUILD_TIME_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
 const AUTH_TOKEN_KEY = 'aplc_auth_token'
+const THEME_STORAGE_KEY = 'aplc_theme'
 const SESSION_TARGET_ACCURACY = 80 // target % for the session
+
+function getInitialTheme(): ThemeMode {
+  if (typeof window === 'undefined') {
+    return 'light'
+  }
+
+  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    return savedTheme
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
 
 const ACTIVE_SUBJECTS: Array<{
   id: Subject
@@ -291,6 +306,24 @@ function MathText({ text, className }: { text: string; className?: string }) {
       className={className}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  )
+}
+
+function ThemeToggleButton({ theme, onToggle }: { theme: ThemeMode; onToggle: () => void }) {
+  const nextTheme = theme === 'dark' ? 'light' : 'dark'
+  const label = nextTheme === 'dark' ? 'Switch to dark theme' : 'Switch to light theme'
+
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={onToggle}
+      aria-label={label}
+      title={label}
+    >
+      <span className="theme-toggle-icon" aria-hidden="true">{nextTheme === 'dark' ? '🌙' : '☀️'}</span>
+      <span className="theme-toggle-label">{nextTheme === 'dark' ? 'Dark' : 'Light'}</span>
+    </button>
   )
 }
 
@@ -703,6 +736,7 @@ function ScoreGauge({ correctCount, answeredCount }: { correctCount: number; ans
 function App() {
   const googleButtonRef = useRef<HTMLDivElement>(null)
   const releasePopoverRef = useRef<HTMLDivElement>(null)
+  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const [stage, setStage] = useState<Stage>('login')
   const [users, setUsers] = useState<User[]>([])
   const [selectedUserId, setSelectedUserId] = useState('adi')
@@ -755,6 +789,16 @@ function App() {
   const answerInputRef = useRef<HTMLInputElement>(null)
   const answerTextareaRef = useRef<HTMLTextAreaElement>(null)
   const isGoogleAuthEnabled = Boolean(googleClientId)
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
+  }, [])
 
   useEffect(() => {
     const loadAuthConfig = async (): Promise<void> => {
@@ -1623,6 +1667,9 @@ function App() {
   if (stage === 'login') {
     return (
       <div className="login-screen">
+        <div className="login-theme-toggle">
+          <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
+        </div>
         <div className="login-card">
           <div className="login-logo">
             <div className="login-logo-icon">
@@ -1751,6 +1798,7 @@ function App() {
             {streak > 0 && (
               <div className="nav-streak">🔥 {streak} day streak</div>
             )}
+            <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
             {authUser && (
               <button className="nav-signout" onClick={signOut}>
                 Sign out
@@ -2170,6 +2218,7 @@ function App() {
           <div className="session-score-badge">
             🎯 {liveScore}%
           </div>
+          <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
         </div>
 
         {/* Exit Confirmation Modal */}
@@ -2551,6 +2600,9 @@ function App() {
       const targetHit = readingSummary.averageWpm >= 120 && readingSummary.averageWpm <= 140
       return (
         <div className="summary-screen">
+          <div className="summary-toolbar">
+            <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
+          </div>
           <div className="summary-hero">
             <span className="summary-trophy">📖</span>
             <h2>Reading Session Complete!</h2>
@@ -2638,6 +2690,9 @@ function App() {
 
     return (
       <div className="summary-screen">
+        <div className="summary-toolbar">
+          <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
+        </div>
         <div className="summary-hero">
           <span className="summary-trophy">{trophy}</span>
           <h2>Session Complete!</h2>

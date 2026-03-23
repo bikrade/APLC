@@ -1,30 +1,30 @@
 export const releaseInfo = {
-  "version": "0.6.7",
+  "version": "0.6.13",
   "channel": "beta",
-  "displayLabel": "v0.6.7 beta",
-  "shortSha": "3e32efe",
-  "releaseDate": "2026-03-22",
-  "headline": "Update CI docker check and dashboard tests",
+  "displayLabel": "v0.6.13 beta",
+  "shortSha": "4d463ea",
+  "releaseDate": "2026-03-23",
+  "headline": "Fix daily practice date attribution",
   "changes": [
     {
-      "sha": "3e32efe",
-      "date": "2026-03-22",
-      "summary": "Update CI docker check and dashboard tests"
+      "sha": "4d463ea",
+      "date": "2026-03-23",
+      "summary": "Fix daily practice date attribution"
     },
     {
-      "sha": "cb64d4f",
-      "date": "2026-03-22",
-      "summary": "Fix reading summary build type"
+      "sha": "3861bb9",
+      "date": "2026-03-23",
+      "summary": "Fix CI prompt cycle typing"
     },
     {
-      "sha": "d01d563",
-      "date": "2026-03-22",
-      "summary": "Update reading pace benchmark and coaching"
+      "sha": "240238e",
+      "date": "2026-03-23",
+      "summary": "Improve adaptive question variation rules"
     },
     {
-      "sha": "a1f9e26",
+      "sha": "094f20b",
       "date": "2026-03-22",
-      "summary": "Remove progress insights banner"
+      "summary": "Refine score page card placement"
     }
   ]
 } as const
