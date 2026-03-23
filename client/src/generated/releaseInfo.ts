@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.6.13",
+  "version": "0.6.14",
   "channel": "beta",
-  "displayLabel": "v0.6.13 beta",
-  "shortSha": "4d463ea",
+  "displayLabel": "v0.6.14 beta",
+  "shortSha": "15f0b36",
   "releaseDate": "2026-03-23",
-  "headline": "Fix daily practice date attribution",
+  "headline": "Add dark theme toggle",
   "changes": [
+    {
+      "sha": "15f0b36",
+      "date": "2026-03-23",
+      "summary": "Add dark theme toggle"
+    },
     {
       "sha": "4d463ea",
       "date": "2026-03-23",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "240238e",
       "date": "2026-03-23",
       "summary": "Improve adaptive question variation rules"
-    },
-    {
-      "sha": "094f20b",
-      "date": "2026-03-22",
-      "summary": "Refine score page card placement"
     }
   ]
 } as const

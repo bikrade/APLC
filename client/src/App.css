@@ -3760,6 +3760,27 @@ html[data-theme='dark'] .meta-card-empty {
   background: #16253a;
 }
 
+html[data-theme='dark'] .heatmap-cell[data-level="1"],
+html[data-theme='dark'] .heatmap-legend-cell[data-level="1"] {
+  background: #29543a;
+}
+
+html[data-theme='dark'] .heatmap-cell[data-level="2"],
+html[data-theme='dark'] .heatmap-legend-cell[data-level="2"] {
+  background: #3f7d42;
+}
+
+html[data-theme='dark'] .heatmap-cell[data-level="3"],
+html[data-theme='dark'] .heatmap-legend-cell[data-level="3"] {
+  background: #58cc02;
+}
+
+html[data-theme='dark'] .heatmap-cell[data-level="4"],
+html[data-theme='dark'] .heatmap-legend-cell[data-level="4"] {
+  background: #8df244;
+  box-shadow: 0 0 0 1px rgba(141, 242, 68, 0.16);
+}
+
 html[data-theme='dark'] .best-next-step-panel {
   background: linear-gradient(135deg, rgba(88, 204, 2, 0.08) 0%, rgba(28, 176, 246, 0.08) 100%);
   border-color: rgba(125, 211, 252, 0.16);
