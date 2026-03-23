@@ -28,6 +28,8 @@ function parseQuestionNumber(id: string): number {
 
 type MathPromptStyle = 'equation' | 'context' | 'reasoning' | 'assessment'
 
+const DEFAULT_MATH_PROMPT_CYCLE: MathPromptStyle[] = ['context', 'equation', 'reasoning', 'assessment']
+
 function getMathPromptStyle(id: string, difficultyLevel: number): MathPromptStyle {
   const level = clampDifficultyLevel(difficultyLevel)
   const questionNumber = parseQuestionNumber(id)
@@ -38,7 +40,7 @@ function getMathPromptStyle(id: string, difficultyLevel: number): MathPromptStyl
     4: ['reasoning', 'context', 'assessment', 'equation'],
     5: ['assessment', 'reasoning', 'context', 'assessment'],
   }
-  const cycle = promptStyleCycle[level] ?? promptStyleCycle[3]
+  const cycle = promptStyleCycle[level] ?? DEFAULT_MATH_PROMPT_CYCLE
   return cycle[(questionNumber - 1) % cycle.length] ?? 'context'
 }
 
