@@ -726,9 +726,9 @@ function ScoreGauge({ correctCount, answeredCount }: { correctCount: number; ans
       aria-label={`${correctCount} correct out of ${answeredCount}`}
       style={{ fontSize: '34px', fontWeight: 900, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
     >
-      <span className="score-fraction-correct" style={{ color: '#58cc02' }}>{correctCount}</span>
-      <span className="score-fraction-separator" style={{ color: '#1a1a2e' }}>/</span>
-      <span className="score-fraction-total" style={{ color: '#1a1a2e' }}>{answeredCount}</span>
+      <span className="score-fraction-correct">{correctCount}</span>
+      <span className="score-fraction-separator">/</span>
+      <span className="score-fraction-total">{answeredCount}</span>
     </div>
   )
 }

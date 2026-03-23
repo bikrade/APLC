@@ -97,6 +97,17 @@ function validateRouteIds(req: Request, res: Response, next: NextFunction): void
   next()
 }
 
+function getRouteParam(req: Request, key: 'userId' | 'sessionId'): string {
+  const value = req.params[key]
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value) && value[0]) {
+    return value[0]
+  }
+  return ''
+}
+
 function noStore(_req: Request, res: Response, next: NextFunction): void {
   res.setHeader('Cache-Control', 'no-store')
   next()
@@ -173,10 +184,6 @@ function isSessionMode(value: string): value is SessionMode {
 
 function getSessionMode(session: SessionRecord): SessionMode {
   return session.sessionMode ?? 'guided'
-}
-
-function getIsoDay(date: Date): string {
-  return date.toISOString().slice(0, 10)
 }
 
 function getDateKeyInTimeZone(date: Date, timeZone: string): string {
@@ -1261,7 +1268,7 @@ app.use('/session/:userId/:sessionId/answer', rateLimit('answer', 120, 60 * 1000
 
 // Dashboard stats endpoint
 app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
-  const { userId } = req.params
+  const userId = getRouteParam(req, 'userId')
     const profile = await readUserProfile(userId)
   const allSessions = await listAllSessions(userId)
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
@@ -1435,7 +1442,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
 
 // In-progress session endpoint
 app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
-  const { userId } = req.params
+  const userId = getRouteParam(req, 'userId')
   const allSessions = await listAllSessions(userId)
     const activeSessions = allSessions
       .filter((s) => s.status === 'active')
@@ -1462,7 +1469,7 @@ app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
 }))
 
 app.get('/insights/:userId', asyncHandler(async (req, res) => {
-  const { userId } = req.params
+  const userId = getRouteParam(req, 'userId')
   const refreshed = await refreshInsightsFile(userId)
   res.json(refreshed)
 }))
@@ -1608,7 +1615,8 @@ app.get('/users', asyncHandler(async (_req, res) => {
 }))
 
 app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
-  const { userId, sessionId } = req.params
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
   const key = sessionKey(userId, sessionId)
   let session = sessions.get(key)
   if (!session) {
@@ -1631,7 +1639,8 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
 }))
 
 app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
-  const { userId, sessionId } = req.params
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
   const questionIndex = Number(req.body?.questionIndex)
   const key = sessionKey(userId, sessionId)
   let session = sessions.get(key)
@@ -1685,7 +1694,8 @@ app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
 }))
 
 app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => {
-  const { userId, sessionId } = req.params
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
   const questionIndex = Number(req.body?.questionIndex)
   const elapsedMs = Number(req.body?.elapsedMs || 0)
   const key = sessionKey(userId, sessionId)
@@ -1748,7 +1758,8 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
 }))
 
 app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => {
-  const { userId, sessionId } = req.params
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
   const questionIndex = Number(req.body?.questionIndex)
   const answerRaw = String(req.body?.answer ?? '')
   const elapsedMs = Number(req.body?.elapsedMs || 0)
@@ -1980,7 +1991,8 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
 }))
 
 app.post('/session/:userId/:sessionId/pause', asyncHandler(async (req, res) => {
-  const { userId, sessionId } = req.params
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
   const questionIndex = Number(req.body?.questionIndex)
   const elapsedMs = Number(req.body?.elapsedMs || 0)
   const key = sessionKey(userId, sessionId)
@@ -2041,7 +2053,8 @@ if (fs.existsSync(clientDistDir)) {
   })
 }
 
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  void next
   const message = err instanceof Error ? err.message : 'Unhandled server error'
   const stack = err instanceof Error ? err.stack : undefined
   logger.error('Unhandled route error', { error: message, stack })

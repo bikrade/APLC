@@ -2345,8 +2345,8 @@
 .reading-summary-note {
   text-align: center;
   font-size: 18px;
-  color: #475569;
-  background: #ffffff;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
   border: 2px solid var(--color-border);
   border-radius: 18px;
   padding: 18px 22px;
@@ -2362,7 +2362,7 @@
 }
 
 .coach-summary-card {
-  background: #ffffff;
+  background: var(--color-surface);
   border-radius: 18px;
   padding: 18px 20px;
   border: 2px solid var(--color-border);
@@ -2929,7 +2929,7 @@
 }
 
 .summary-stat-card {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-radius: 20px;
   padding: 24px;
   display: flex;
@@ -2970,7 +2970,7 @@
 .btn-home {
   flex: 1;
   padding: 16px;
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-text-secondary);
   border: 2px solid var(--color-border);
   border-radius: 14px;
@@ -3573,7 +3573,7 @@
 .quiz-results-panel {
   width: 100%;
   max-width: 960px;
-  background: var(--color-white);
+  background: var(--color-surface);
   border-radius: 22px;
   padding: 24px;
   border: 2px solid var(--color-border);
@@ -3588,8 +3588,8 @@
 
 .quiz-result-card {
   border-radius: 18px;
-  border: 1px solid rgba(31, 36, 55, 0.08);
-  background: #fcfdff;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   padding: 18px 20px;
   display: grid;
   gap: 10px;

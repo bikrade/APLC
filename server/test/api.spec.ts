@@ -246,17 +246,21 @@ describe('APLC backend', () => {
     const savedSession = await readSavedSession(ctx.dataRoot, sessionId)
     const quizAnswers = savedSession.questions[5]?.quizItems?.map((item) => item.correctOption) ?? []
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 4; index += 1) {
       const pageResponse = await request(ctx.app)
         .post(`/session/adi/${sessionId}/answer`)
         .send({ questionIndex: index, elapsedMs: 20000, answer: '' })
 
       expect(pageResponse.status).toBe(200)
-      if (index === 4) {
-        expect(pageResponse.body.questions[5].kind).toBe('reading-quiz')
-        expect(pageResponse.body.adaptiveNotification?.kind).toBe('reading-warning')
-      }
     }
+
+    const transitionResponse = await request(ctx.app)
+      .post(`/session/adi/${sessionId}/answer`)
+      .send({ questionIndex: 4, elapsedMs: 20000, answer: '' })
+
+    expect(transitionResponse.status).toBe(200)
+    expect(transitionResponse.body.questions[5].kind).toBe('reading-quiz')
+    expect(transitionResponse.body.adaptiveNotification?.kind).toBe('reading-warning')
 
     const quiz = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)

@@ -8,9 +8,12 @@
     "build": "VITE_API_BASE_URL= npm --prefix client run build && npm --prefix server run build",
     "lint:client": "npm --prefix client run lint",
     "lint:server": "npm --prefix server run lint",
-    "lint": "npm run lint:client && npm run lint:server",
+    "lint:e2e": "eslint tests/e2e playwright.config.ts",
+    "lint:tests": "npm --prefix client run lint:tests && npm --prefix server run lint:test && npm run lint:e2e",
+    "lint": "npm run lint:client && npm run lint:server && npm run lint:e2e",
     "test:client": "npm --prefix client run test",
     "test:server": "npm --prefix server run test",
+    "pretest:e2e": "npm run lint:e2e",
     "test:e2e": "playwright test",
     "test": "npm run test:client && npm run test:server && npm run test:e2e",
     "audit:root": "npm audit --audit-level=high --omit=dev",
@@ -21,6 +24,11 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
-    "@playwright/test": "^1.55.1"
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.55.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-playwright": "^2.10.1",
+    "globals": "^17.4.0",
+    "typescript-eslint": "^8.57.1"
   }
 }

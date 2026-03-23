@@ -116,3 +116,11 @@
   - Quiz mode preserves the same adaptive logic, hints, reveals, and scoring, but defers instant correctness feedback until the final session review
   - Summary UI now includes a question-by-question quiz review block for math quiz sessions
   - Server integration and Playwright coverage expanded for quiz progression and daily-practice dashboard metrics
+- Test automation hardening completed:
+  - Root linting now covers client code, server code, server test files, and Playwright E2E specs
+  - Client and server test commands now run framework-specific linting before Vitest executes
+  - Server test files are now typechecked explicitly via `tsconfig.test.json`
+  - Existing GitHub Actions CI picked up the broader coverage through the existing root `lint` and `test` entrypoints
+- Dark theme score/review polish completed:
+  - Score and summary surfaces now use theme tokens instead of hardcoded light backgrounds
+  - Reading and quiz review panels now stay aligned with dark mode styling

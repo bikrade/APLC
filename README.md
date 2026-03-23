@@ -115,15 +115,23 @@ See [docs/deployment.md](docs/deployment.md) for full details.
 ## Testing
 
 ```bash
-# Server unit/integration tests
-cd server && npm test
-
-# E2E tests
-npm run test:e2e
-
-# Lint
+# Full validation used by CI
 npm run lint
+npm run test
+
+# Targeted commands
+npm run lint:tests
+npm run test:client
+npm run test:server
+npm run test:e2e
 ```
+
+Notes:
+
+- `npm run lint` now covers client app code, server source code, server test files, and Playwright E2E specs.
+- `npm run test:client` runs client test linting before Vitest.
+- `npm run test:server` runs server test linting plus source and test typechecks before Vitest.
+- `npm run test:e2e` runs Playwright linting before browser automation.
 
 ## Documentation
 

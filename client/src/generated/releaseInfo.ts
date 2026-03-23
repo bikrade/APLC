@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.6.14",
+  "version": "0.6.15",
   "channel": "beta",
-  "displayLabel": "v0.6.14 beta",
-  "shortSha": "15f0b36",
+  "displayLabel": "v0.6.15 beta",
+  "shortSha": "ab1ab1d",
   "releaseDate": "2026-03-23",
-  "headline": "Add dark theme toggle",
+  "headline": "Fix dark theme heatmap colors",
   "changes": [
+    {
+      "sha": "ab1ab1d",
+      "date": "2026-03-23",
+      "summary": "Fix dark theme heatmap colors"
+    },
     {
       "sha": "15f0b36",
       "date": "2026-03-23",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "3861bb9",
       "date": "2026-03-23",
       "summary": "Fix CI prompt cycle typing"
-    },
-    {
-      "sha": "240238e",
-      "date": "2026-03-23",
-      "summary": "Improve adaptive question variation rules"
     }
   ]
 } as const

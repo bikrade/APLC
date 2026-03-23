@@ -45,7 +45,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
   next()
 }
 
-export function asyncHandler(fn: (req: any, res: Response, next: NextFunction) => Promise<void>) {
+export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
     fn(req, res, next).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : 'Unknown error'

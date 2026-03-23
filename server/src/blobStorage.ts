@@ -120,6 +120,7 @@ export async function blobReadUserIds(): Promise<string[]> {
 }
 
 export async function blobDeleteLegacySessionFiles(_userId: string): Promise<void> {
+  void _userId
   // No-op for blob storage — legacy files only exist on local filesystem
 }
 

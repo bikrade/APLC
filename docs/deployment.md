@@ -99,10 +99,17 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
 
 1. Install dependencies (root, client, server)
 2. Install Playwright Chromium
-3. Lint (ESLint for client + server)
+3. Lint all code paths: client app code, client Vitest files, server source, server Vitest files, and Playwright E2E specs
 4. Build client and server
 5. Run server unit/integration tests (Vitest)
 6. Run E2E tests (Playwright)
+
+The lint and test automation is wired through package scripts rather than duplicated in the workflow:
+
+- Root `npm run lint` enforces client, server, and E2E linting.
+- Client `pretest` lints Vitest files before running unit tests.
+- Server `pretest` lints test files and typechecks both source and tests before running integration tests.
+- Root `pretest:e2e` lints Playwright specs before running browser tests.
 
 ### CD (main branch only)
 
