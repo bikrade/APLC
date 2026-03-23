@@ -21,6 +21,30 @@ afterEach(async () => {
 })
 
 describe('APLC backend', () => {
+  test('varies multiplication prompt styles across the same adaptive session level', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    const first = generateQuestionByType('q-1', 'decimal', 'Multiplication', 3)
+    const second = generateQuestionByType('q-2', 'decimal', 'Multiplication', 3)
+    const third = generateQuestionByType('q-3', 'decimal', 'Multiplication', 3)
+    const fourth = generateQuestionByType('q-4', 'decimal', 'Multiplication', 3)
+
+    expect(first.prompt).toContain('Each science sample weighs')
+    expect(second.prompt).toMatch(/^\d+(?:\.\d+)? × \d+(?:\.\d+)?$/)
+    expect(third.prompt).toContain('area model')
+    expect(fourth.prompt).toContain('ratio table')
+  })
+
+  test('uses assessment-style and reasoning-style division prompts at higher levels', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    const assessment = generateQuestionByType('q-1', 'fraction', 'Division', 5)
+    const reasoning = generateQuestionByType('q-2', 'mixed', 'Division', 5)
+
+    expect(assessment.prompt).toContain('ribbon measuring')
+    expect(reasoning.prompt).toContain('reciprocal')
+  })
+
   test('serves health and baseline hardening headers', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup

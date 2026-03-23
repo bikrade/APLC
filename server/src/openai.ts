@@ -229,7 +229,7 @@ export async function generateQuestionSetAI(count: number): Promise<Question[]> 
     [
       {
         role: 'system',
-        content: `You are a Grade 6 math question generator for an IB student practising arithmetic.
+        content: `You are a Grade 6 math question generator for an IB student practising multiplication and division in ways that resemble real assessments.
 Generate exactly ${count} questions, rotating evenly through these types: decimal, fraction, percentage, mixed.
 
 Return ONLY a JSON array (no markdown fences, no commentary). Each element must have:
@@ -243,17 +243,35 @@ Return ONLY a JSON array (no markdown fences, no commentary). Each element must 
 }
 
 Rules:
-- decimal: multiply two numbers with 1 decimal place each, e.g. 3.5 × 2.8
-- fraction: multiply two simple fractions, e.g. 2/3 × 4/5, answer as a decimal
-- percentage: compute a percentage of a whole number, e.g. 35% of 80
-- mixed: multiply a decimal by a fraction, e.g. 4.2 × 3/5
+- The set should feel varied, not monotonous. Mix bare numerical items, short word problems, reasoning-style prompts, ratio-table or scale contexts, and real-life assessment-style setups.
+- Keep every question answerable with a single numeric answer.
+- This set is for Adi specifically: a Grade 6 IB learner who needs the most support in multiplication, division, decimals, fractions, percentages, ratios, and proportion-style scaling.
+- Emphasize decimals, fractions, percentages, proportions, and ratio-flavored contexts because those are the learner's weak areas.
+- Avoid repeating the same sentence pattern or only giving prompts in the form "a × b".
+- decimal: use multiplication or division with decimals that fit Grade 6 work, often in measurement, money, scale, or rate contexts.
+- fraction: use multiplication or division with simple fractions, often in recipe, area, sharing, or part-of-a-part contexts.
+- percentage: use percent-of, percent as a rate, or percentage-based comparison contexts that still produce a numeric answer.
+- mixed: combine decimals with fractions or ratio/proportion contexts, e.g. scaling, grouping, or unit-rate style questions.
+- Include a healthy assessment blend: some pure fluency items, some applied word problems, some reasoning prompts, and some test-style interpretation items. Do not let one format dominate.
+- Frequently connect representations: decimal <-> fraction <-> percentage <-> ratio, but keep the final response numeric.
+- Target common misconceptions on purpose across the set: decimal place-value mistakes, multiplying instead of dividing, dividing instead of multiplying, forgetting to convert percentages to decimals, and errors with reciprocal use in fraction division.
+- Prefer numbers that reward strategy and understanding over tedious arithmetic. Make the arithmetic challenging but not messy for its own sake.
+- Build a gentle progression inside the set: begin with 1-2 accessible confidence-building questions, then increase complexity, then include a few more demanding questions later in the set.
+- Include both one-step and two-step thinking, but keep the wording concise enough that reading load does not hide the math.
+- Use contexts a student would realistically see in school assessments: price/unit cost, recipes, scale drawings, measurement, grouped quantities, sharing, rates, and proportion tables.
+- Avoid fluffy stories, irrelevant detail, or long narratives. The language should support the math, not distract from it.
+- Avoid repeating the same context, same numbers, or same operation pattern in back-to-back questions.
+- At least some items should require deciding what operation to use from context, not just carrying out a visible expression.
+- Some later questions should require estimation sense or reasonableness checking, but still end with a precise numeric answer.
+- Hints should teach a method a teacher would approve of, not just restate the question.
+- Explanations should name the underlying strategy briefly, such as scaling, unit rate, reciprocal, part of a whole, or percent conversion.
 - All answers must be correct numbers (not strings)
 - helpSteps must have exactly 3 items
 - Vary the difficulty appropriately for a Grade 6 student`,
       },
       {
         role: 'user',
-        content: `Generate ${count} Grade 6 arithmetic practice questions now.`,
+        content: `Generate ${count} Grade 6 multiplication and division practice questions now with strong variation in form and authentic assessment style.`,
       },
     ],
     2000,
@@ -352,6 +370,16 @@ Story requirements:
 - Provide 8-12 keywordGroups, all lowercase, each group containing alternative terms/phrases that a student summary might mention.
 - The 4 quizItems must check both literal understanding and inference, not just trivial recall.
 - Every quiz question must have exactly 4 plausible options with only one correct answer.
+- Build the reading like a strong teacher-made comprehension passage, not just a creative story. The text should support assessment of sequencing, cause and effect, character motivation, evidence-based inference, vocabulary in context, and theme.
+- Keep the reading load manageable for a Grade 6 learner: mostly clear syntax, purposeful paragraphing, and only a small number of richer vocabulary words that can be understood from context.
+- Do not make comprehension depend on obscure vocabulary or cultural background knowledge.
+- Include enough concrete details that a student can cite or recall evidence from the text without guessing.
+- Spread comprehension demands across the 4 quizItems: include a mix of literal retrieval, inference, author's purpose or theme, and word-or-phrase-in-context where natural.
+- Avoid trick questions, ambiguous distractors, negatives like "Which is NOT...", and answer choices that are too obviously wrong.
+- Distractors should reflect believable student misunderstandings, such as mixing up timeline events, overgeneralizing a detail, or missing a motivation shift.
+- The summaryPrompt and summaryGuidance should push for the key summary structure a teacher would want: setting, main problem, important actions, and resolution, not tiny details.
+- Prefer emotionally coherent stories with one clear through-line over stories that are clever but confusing.
+- Make sure each page boundary feels natural and does not break the story in a confusing place.
 
 Difficulty guidance:
 - ${challengeNotes}`,
