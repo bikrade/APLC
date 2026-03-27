@@ -90,6 +90,11 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v5
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
+
       - name: Azure Login (OIDC)
         uses: azure/login@v3
         with:
@@ -103,13 +108,22 @@ jobs:
           PREVIOUS_REVISION=$(az containerapp revision list -n aplc-app -g aplc-rg --query "[?properties.active].name | [0]" -o tsv)
           echo "revision=$PREVIOUS_REVISION" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push image to ACR
-        run: |
-          az acr build \
-            --registry aplcregistry2026 \
-            --image aplc:${{ github.sha }} \
-            --image aplc:latest \
-            --file Dockerfile .
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY_LOGIN_SERVER }}/aplc:${{ github.sha }}
+            ${{ secrets.REGISTRY_LOGIN_SERVER }}/aplc:latest
 
       - name: Update Container App secrets
         run: |

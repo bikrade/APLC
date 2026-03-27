@@ -28,6 +28,17 @@ if [[ $ACTIVATE_EXIT -ne 0 ]]; then
   fi
 fi
 
+REVISION_MODE=$(az containerapp show \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query 'properties.configuration.activeRevisionsMode' \
+  -o tsv)
+
+if [[ "$REVISION_MODE" == "Single" ]]; then
+  echo "Container App uses single revision mode. Skipping traffic reassignment."
+  exit 0
+fi
+
 echo "Routing 100% traffic back to $REVISION_NAME"
 az containerapp ingress traffic set \
   --name "$APP_NAME" \
