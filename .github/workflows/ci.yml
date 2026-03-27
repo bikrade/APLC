@@ -65,6 +65,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          # Avoid pulling the BuildKit image from Docker Hub (rate-limited/flaky).
+          driver: docker
 
       - name: Validate production Docker image
         uses: docker/build-push-action@v7

@@ -54,7 +54,10 @@ test('division session launches in the same shared wizard shell', async ({ page 
 
   await expect(page.locator('.question-counter')).toContainText(/Question [12] of 12/i)
   await expect(page.locator('.question-badge-row')).toContainText(/quiz/i)
-  await expect(page.locator('.question-prompt')).toContainText('÷')
+  const promptText = (await page.locator('.question-prompt').innerText()).trim()
+  expect(promptText.length).toBeGreaterThan(0)
+  // Prompt may be either a numeric equation or a word problem template.
+  expect(promptText.includes('÷') || promptText.includes('/')).toBeTruthy()
   await expect(page.getByText(/Time/i)).toBeVisible()
 })
 
