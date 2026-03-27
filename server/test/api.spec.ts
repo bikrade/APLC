@@ -304,8 +304,8 @@ describe('APLC backend', () => {
       .send({ questionIndex: 1, answer: String(answerTwo), elapsedMs: 22000 })
 
     expect(second.status).toBe(200)
-    expect(second.body.difficultyLevel).toBe(3)
-    expect(second.body.adaptiveNotification).toBeFalsy()
+    expect(second.body.difficultyLevel).toBe(4)
+    expect(second.body.adaptiveNotification?.kind).toBe('difficulty-up')
 
     savedSession = await readSavedSession(ctx.dataRoot, sessionId)
     const answerThree = savedSession.questions[2]?.answer
@@ -315,7 +315,7 @@ describe('APLC backend', () => {
 
     expect(third.status).toBe(200)
     expect(third.body.difficultyLevel).toBe(4)
-    expect(third.body.adaptiveNotification?.kind).toBe('difficulty-up')
+    expect(third.body.adaptiveNotification).toBeFalsy()
 
     const wrongOne = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)

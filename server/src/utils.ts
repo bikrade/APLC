@@ -13,8 +13,12 @@ function roundTo(value: number, places = 4): number {
   return Math.round(value * factor) / factor
 }
 
-function clampDifficultyLevel(level: number): number {
+function clampDivisionDifficultyLevel(level: number): number {
   return Math.min(5, Math.max(1, Math.round(level)))
+}
+
+function clampMultiplicationDifficultyLevel(level: number): number {
+  return Math.min(7, Math.max(1, Math.round(level)))
 }
 
 function randomInt(min: number, max: number): number {
@@ -31,7 +35,9 @@ type MathPromptStyle = 'equation' | 'context' | 'reasoning' | 'assessment'
 const DEFAULT_MATH_PROMPT_CYCLE: MathPromptStyle[] = ['context', 'equation', 'reasoning', 'assessment']
 
 function getMathPromptStyle(id: string, difficultyLevel: number): MathPromptStyle {
-  const level = clampDifficultyLevel(difficultyLevel)
+  // Prompt style intensity is still capped to the original 1-5 band even if
+  // multiplication supports higher internal difficulty levels.
+  const level = clampDivisionDifficultyLevel(difficultyLevel)
   const questionNumber = parseQuestionNumber(id)
   const promptStyleCycle: Record<number, MathPromptStyle[]> = {
     1: ['equation', 'context', 'equation', 'context'],
@@ -163,14 +169,16 @@ function buildDivisionMixedPrompt(style: MathPromptStyle, dividend: number, n: n
 }
 
 function buildMultiplicationDecimalQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
-  const places = level >= 4 ? 2 : 1
+  const level = clampMultiplicationDifficultyLevel(difficultyLevel)
+  const places = level >= 6 ? 3 : level >= 4 ? 2 : 1
   const rangeMap: Record<number, { min: number; max: number }> = {
     1: { min: 10, max: 35 },
     2: { min: 18, max: 50 },
     3: { min: 25, max: 70 },
     4: { min: 35, max: 95 },
     5: { min: 55, max: 140 },
+    6: { min: 80, max: 220 },
+    7: { min: 120, max: 320 },
   }
   const ranges = rangeMap[level] ?? { min: 25, max: 70 }
   const a = roundTo(randomInt(ranges.min, ranges.max) / 10, places)
@@ -215,7 +223,7 @@ function getFractionPairsForLevel(level: number): [number, number, number, numbe
 }
 
 function buildMultiplicationFractionQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
+  const level = clampMultiplicationDifficultyLevel(difficultyLevel)
   const pairPool = getFractionPairsForLevel(level)
   const pair = pairPool[Math.floor(Math.random() * pairPool.length)] ?? [1, 2, 1, 2]
   const [n1, d1, n2, d2] = pair
@@ -240,18 +248,22 @@ function buildMultiplicationFractionQuestion(id: string, difficultyLevel: number
 }
 
 function buildMultiplicationPercentageQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
+  const level = clampMultiplicationDifficultyLevel(difficultyLevel)
   const percentChoices = level <= 2
     ? [10, 20, 25, 50]
     : level === 3
       ? [10, 20, 25, 30, 40, 50, 60, 75]
-      : [12, 15, 18, 24, 35, 45, 65, 75]
+      : level <= 5
+        ? [12, 15, 18, 24, 35, 45, 65, 75]
+        : [7, 12, 15, 17, 18, 22, 24, 27, 35, 45, 62, 68, 75, 88]
   const percent = percentChoices[Math.floor(Math.random() * percentChoices.length)] ?? 25
   const base = level <= 2
     ? randomInt(5, 18) * 5
     : level === 3
       ? randomInt(7, 24) * 5
-      : randomInt(12, 40) * 3
+      : level <= 5
+        ? randomInt(12, 40) * 3
+        : randomInt(25, 120) * 2
   const answer = roundTo((percent / 100) * base)
   const prompt = buildMultiplicationPercentagePrompt(getMathPromptStyle(id, difficultyLevel), percent, base)
   return {
@@ -271,10 +283,11 @@ function buildMultiplicationPercentageQuestion(id: string, difficultyLevel: numb
 }
 
 function buildMultiplicationMixedQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
-  const decimal = roundTo(randomInt(level <= 2 ? 18 : 24, level >= 4 ? 110 : 80) / 10, level >= 4 ? 2 : 1)
-  const n = randomInt(1 + (level >= 4 ? 1 : 0), level >= 4 ? 8 : 5)
-  const d = randomInt(level <= 2 ? 2 : 3, level >= 4 ? 10 : 6)
+  const level = clampMultiplicationDifficultyLevel(difficultyLevel)
+  const decimalPlaces = level >= 6 ? 2 : level >= 4 ? 2 : 1
+  const decimal = roundTo(randomInt(level <= 2 ? 18 : 24, level >= 6 ? 180 : level >= 4 ? 110 : 80) / 10, decimalPlaces)
+  const n = randomInt(1 + (level >= 4 ? 1 : 0), level >= 6 ? 12 : level >= 4 ? 8 : 5)
+  const d = randomInt(level <= 2 ? 2 : 3, level >= 6 ? 14 : level >= 4 ? 10 : 6)
   const fractionValue = roundTo(n / d, 4)
   const answer = roundTo(decimal * fractionValue)
   const prompt = buildMultiplicationMixedPrompt(getMathPromptStyle(id, difficultyLevel), decimal, n, d)
@@ -295,7 +308,7 @@ function buildMultiplicationMixedQuestion(id: string, difficultyLevel: number): 
 }
 
 function buildDivisionDecimalQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
+  const level = clampDivisionDifficultyLevel(difficultyLevel)
   const places = level >= 4 ? 2 : 1
   const divisor = roundTo(randomInt(level <= 2 ? 10 : 15, level >= 4 ? 80 : 60) / 10, places)
   const quotient = roundTo(randomInt(level <= 2 ? 12 : 18, level >= 4 ? 100 : 70) / 10, places)
@@ -318,7 +331,7 @@ function buildDivisionDecimalQuestion(id: string, difficultyLevel: number): Ques
 }
 
 function buildDivisionFractionQuestion(id: string, difficultyLevel: number): Question {
-  const pairPool = getFractionPairsForLevel(clampDifficultyLevel(difficultyLevel))
+  const pairPool = getFractionPairsForLevel(clampDivisionDifficultyLevel(difficultyLevel))
   const pair = pairPool[Math.floor(Math.random() * pairPool.length)] ?? [1, 2, 1, 2]
   const [n1, d1, n2, d2] = pair
   const leftValue = roundTo(n1 / d1, 4)
@@ -342,7 +355,7 @@ function buildDivisionFractionQuestion(id: string, difficultyLevel: number): Que
 }
 
 function buildDivisionPercentageQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
+  const level = clampDivisionDifficultyLevel(difficultyLevel)
   const percentChoices = level <= 2
     ? [10, 20, 25, 50]
     : level === 3
@@ -373,7 +386,7 @@ function buildDivisionPercentageQuestion(id: string, difficultyLevel: number): Q
 }
 
 function buildDivisionMixedQuestion(id: string, difficultyLevel: number): Question {
-  const level = clampDifficultyLevel(difficultyLevel)
+  const level = clampDivisionDifficultyLevel(difficultyLevel)
   const quotient = roundTo(randomInt(level <= 2 ? 12 : 18, level >= 4 ? 95 : 70) / 10, level >= 4 ? 2 : 1)
   const n = randomInt(level <= 2 ? 1 : 2, level >= 4 ? 8 : 5)
   const d = randomInt(level <= 2 ? 2 : 3, level >= 4 ? 10 : 6)

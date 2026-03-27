@@ -454,6 +454,13 @@ function clampDifficultyLevel(level: number): number {
   return Math.min(5, Math.max(1, Math.round(level)))
 }
 
+function clampDifficultyLevelForSubject(subject: Subject, level: number): number {
+  if (subject === 'Multiplication') {
+    return Math.min(7, Math.max(1, Math.round(level)))
+  }
+  return clampDifficultyLevel(level)
+}
+
 function getCompletedMathAnswersForSubject(allSessions: SessionRecord[], subject: Subject): Array<{
   answer: QuestionState
   session: SessionRecord
@@ -494,7 +501,9 @@ function computeAdaptiveDifficultyLevel(allSessions: SessionRecord[], subject: S
   if (avgSeconds > 120 || slowCount >= Math.ceil(recentAnswers.length / 3)) level -= 1
   if (supportRate > 20) level -= 1
 
-  return clampDifficultyLevel(level)
+  // Multiplication tends to become automatic quickly, so allow a higher ceiling.
+  // Division remains capped at 5 to avoid overshooting conceptual load.
+  return clampDifficultyLevelForSubject(subject, level)
 }
 
 function maybeAdjustDifficulty(
@@ -504,7 +513,8 @@ function maybeAdjustDifficulty(
 ): AdaptiveNotification | null {
   if (session.subject === 'Reading') return null
 
-  const currentLevel = clampDifficultyLevel(session.adaptiveDifficultyLevel ?? 3)
+  const currentLevel = clampDifficultyLevelForSubject(session.subject, session.adaptiveDifficultyLevel ?? 3)
+  const maxLevel = session.subject === 'Multiplication' ? 7 : 5
   let momentum = session.adaptiveMomentum ?? 0
   let questionsSinceChange = session.adaptiveQuestionsSinceChange ?? 0
   const attemptCount = state.attemptCount ?? 0
@@ -522,8 +532,10 @@ function maybeAdjustDifficulty(
     const verySlow = elapsedMs >= 150_000
     const supported = usedSupport || attemptCount > 1
 
-    if (firstAttemptCorrect && !supported && veryFast) momentum += 0.9
-    else if (firstAttemptCorrect && !supported && solidPace) momentum += 0.65
+    // Multiplication ramps faster to keep strong learners engaged.
+    const upBoost = session.subject === 'Multiplication' ? 0.2 : 0
+    if (firstAttemptCorrect && !supported && veryFast) momentum += 0.9 + upBoost
+    else if (firstAttemptCorrect && !supported && solidPace) momentum += 0.65 + upBoost
     else if (firstAttemptCorrect && !supported && elapsedMs <= 95_000) momentum += 0.35
     else if (state.usedReveal || verySlow || attemptCount >= 3) momentum -= 0.75
     else if (usedSupport || attemptCount > 1 || elapsedMs >= 120_000) momentum -= 0.45
@@ -533,7 +545,10 @@ function maybeAdjustDifficulty(
   questionsSinceChange += 1
   session.adaptiveMomentum = Number(momentum.toFixed(2))
   session.adaptiveQuestionsSinceChange = questionsSinceChange
-  if (questionsSinceChange >= 3 && session.adaptiveMomentum >= 2.3 && currentLevel < 5) {
+
+  const levelUpMinQuestions = session.subject === 'Multiplication' ? 2 : 3
+  const levelUpThreshold = session.subject === 'Multiplication' ? 2.15 : 2.3
+  if (questionsSinceChange >= levelUpMinQuestions && session.adaptiveMomentum >= levelUpThreshold && currentLevel < maxLevel) {
     session.adaptiveDifficultyLevel = currentLevel + 1
     session.adaptiveMomentum = 0.35
     session.adaptiveQuestionsSinceChange = 0
@@ -544,7 +559,9 @@ function maybeAdjustDifficulty(
     }
   }
 
-  if (questionsSinceChange >= 3 && session.adaptiveMomentum <= -2.3 && currentLevel > 1) {
+  const levelDownMinQuestions = 3
+  const levelDownThreshold = session.subject === 'Multiplication' ? -1.25 : -2.3
+  if (questionsSinceChange >= levelDownMinQuestions && session.adaptiveMomentum <= levelDownThreshold && currentLevel > 1) {
     session.adaptiveDifficultyLevel = currentLevel - 1
     session.adaptiveMomentum = -0.35
     session.adaptiveQuestionsSinceChange = 0
@@ -1507,7 +1524,10 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   const existingActiveSession = await pruneActiveSessionsForSubject(userId, requestedSubject)
   if (existingActiveSession) {
     existingActiveSession.sessionMode = getSessionMode(existingActiveSession)
-    existingActiveSession.adaptiveDifficultyLevel = clampDifficultyLevel(existingActiveSession.adaptiveDifficultyLevel ?? 3)
+    existingActiveSession.adaptiveDifficultyLevel = clampDifficultyLevelForSubject(
+      existingActiveSession.subject,
+      existingActiveSession.adaptiveDifficultyLevel ?? 3,
+    )
     existingActiveSession.adaptiveMomentum = existingActiveSession.adaptiveMomentum ?? 0
     existingActiveSession.adaptiveQuestionsSinceChange = existingActiveSession.adaptiveQuestionsSinceChange ?? 0
     sessions.set(sessionKey(userId, existingActiveSession.id), existingActiveSession)
