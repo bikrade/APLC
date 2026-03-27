@@ -140,3 +140,7 @@
 - Deployment workflow documentation corrected and revalidated:
   - CI/CD docs now reflect the current GitHub-runner Docker Buildx push-to-ACR flow instead of the older `az acr build` path
   - Production-image validation remains part of the pipeline through the dedicated Docker validation job before main-branch deploys
+- Repo-level push validation gate completed:
+  - Added `npm run validate:push` to run lint, build, test, Docker Buildx image validation, and local container smoke checks before any push
+  - Added a versioned `.githooks/pre-push` hook plus `npm run setup:hooks` so local pushes in this clone automatically enforce the validation gate
+  - Added repo instruction files (`AGENTS.md` and `.github/copilot-instructions.md`) so fresh Copilot sessions in this repo treat pre-push validation as mandatory

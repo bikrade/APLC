@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.6.26",
+  "version": "0.6.27",
   "channel": "beta",
-  "displayLabel": "v0.6.26 beta",
-  "shortSha": "d1793f4",
+  "displayLabel": "v0.6.27 beta",
+  "shortSha": "e51d8c5",
   "releaseDate": "2026-03-28",
-  "headline": "Fix Azure deploy image build and rollback",
+  "headline": "Improve reading pages and add session reset flow",
   "changes": [
+    {
+      "sha": "e51d8c5",
+      "date": "2026-03-28",
+      "summary": "Improve reading pages and add session reset flow"
+    },
     {
       "sha": "d1793f4",
       "date": "2026-03-28",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "5ed868c",
       "date": "2026-03-28",
       "summary": "Expand reading vocabulary coaching and scoring"
-    },
-    {
-      "sha": "c89632a",
-      "date": "2026-03-28",
-      "summary": "Mark docker-validate as continue-on-error to tolerate Docker Hub rate limits"
     }
   ]
 } as const

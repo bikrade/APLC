@@ -122,6 +122,9 @@ See [docs/deployment.md](docs/deployment.md) for full details.
 npm run lint
 npm run test
 
+# Full local pre-push validation used before git/gh push
+npm run validate:push
+
 # Targeted commands
 npm run lint:tests
 npm run test:client
@@ -136,6 +139,8 @@ Notes:
 - `npm run test:server` runs server test linting plus source and test typechecks before Vitest.
 - `npm run test:e2e` runs Playwright linting before browser automation.
 - The production image path used by CI/CD is additionally validated by the workflow's Docker Buildx job before deployment.
+- `npm run validate:push` runs lint, build, test, a Docker Buildx production-image build, and a local container smoke check on `/health` and `/config/auth`.
+- `npm run setup:hooks` configures the versioned `.githooks/pre-push` hook so local pushes automatically enforce `npm run validate:push`.
 
 ## Documentation
 

@@ -110,6 +110,8 @@ The lint and test automation is wired through package scripts rather than duplic
 - Client `pretest` lints Vitest files before running unit tests.
 - Server `pretest` lints test files and typechecks both source and tests before running integration tests.
 - Root `pretest:e2e` lints Playwright specs before running browser tests.
+- Root `npm run validate:push` is the local pre-push gate: it runs lint, build, test, a Docker Buildx production-image build, and local container smoke checks.
+- The repo's versioned `.githooks/pre-push` hook calls `npm run validate:push` automatically after `npm run setup:hooks` configures `core.hooksPath`.
 
 ### CD (main branch only)
 
@@ -188,6 +190,22 @@ Why the workflow uses runner-side Docker builds:
 
 - It avoids Docker Hub pull-rate issues encountered with `az acr build`.
 - It matches the production image validation path used in the `docker-validate` GitHub Actions job.
+
+## Local Push Gate
+
+Before any `git push` or `gh push`, run:
+
+```bash
+npm run validate:push
+```
+
+To enforce this automatically for local pushes in this clone, run:
+
+```bash
+npm run setup:hooks
+```
+
+That points Git at the repo's versioned `.githooks/pre-push` hook, which blocks pushes unless the full local validation sequence passes.
 
 ## Infrastructure as Code
 

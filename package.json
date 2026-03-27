@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "release:sync": "node scripts/generate-release-info.mjs",
+    "setup:hooks": "git config core.hooksPath .githooks",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run build",
     "build": "VITE_API_BASE_URL= npm --prefix client run build && npm --prefix server run build",
@@ -20,6 +21,7 @@
     "audit:client": "npm --prefix client audit --audit-level=high --omit=dev",
     "audit:server": "npm --prefix server audit --audit-level=high --omit=dev",
     "audit": "npm run audit:root && npm run audit:client && npm run audit:server",
+    "validate:push": "bash ./scripts/validate-before-push.sh",
     "ci": "npm run lint && npm run audit && npm run build && npm run test"
   },
   "devDependencies": {
