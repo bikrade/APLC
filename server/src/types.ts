@@ -24,6 +24,7 @@ export interface Question {
   prompt: string
   type: QuestionType
   kind?: QuestionKind
+  templateId?: string
   title?: string
   content?: string
   wordCount?: number
@@ -73,6 +74,7 @@ export interface SessionRecord {
   adaptiveDifficultyLevel?: number
   adaptiveMomentum?: number
   adaptiveQuestionsSinceChange?: number
+  recentTemplateIds?: string[]
   readingChallengeTier?: 'core' | 'stretch' | 'advanced'
   readingPerformanceSummary?: string
   readingPriorTitles?: string[]

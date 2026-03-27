@@ -1815,6 +1815,11 @@ function App() {
             <p className="welcome-date">{formatCurrentDate()}</p>
             <h2 className="welcome-title">{getGreeting(selectedUserName)}</h2>
           </div>
+          {streak > 0 && (
+            <div className="mobile-streak-banner" aria-label={`Current streak ${streak} days`}>
+              🔥 {streak} day streak
+            </div>
+          )}
 
           <div className="dashboard-top-grid">
             {dailyPractice && (

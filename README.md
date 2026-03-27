@@ -6,11 +6,13 @@ An adaptive, personalized learning web app for Grade 6 math and reading practice
 
 ## Features
 
-- **Multiplication** — decimal, fraction, percentage, and mixed question types with adaptive level shifting
-- **Division** — same question types with division-specific help steps and adaptive level shifting
+- **Multiplication** — decimal, fraction, percentage, and mixed question types with adaptive level shifting, expanded challenge ceiling (up to internal level 7), and broad word-problem template variety
+- **Division** — same question types with division-specific help steps plus expanded word-problem template variety
 - **Reading** — fresh AI-written middle-grade stories, corrected server-verified WPM scoring, fast-reader quiz mode, and comprehension warnings
 - **AI-powered** — OpenAI (gpt-4o-mini) generates questions, hints, and per-answer explanations
-- **Adaptive difficulty** — uses historical subject performance plus live first-attempt behavior, pace, and support usage
+- **Adaptive difficulty** — uses historical subject performance plus live first-attempt behavior, pace, and support usage (multiplication can step up faster when Adi is consistently strong)
+- **Template variety guardrails** — math question generation tracks recently used templates and avoids repeating them in a rolling 30-question window when possible
+- **In-progress upgrades** — new difficulty and template-variety behavior applies as soon as the next unanswered question is generated (no need to complete the current session first)
 - **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, today-vs-yesterday practice bars against a profile-driven daily goal, best-next-step coaching, mastery, detailed insights, and parent review
 - **Session modes** — each subject can start in `Guided` mode with live correctness feedback or `Quiz` mode with end-of-session review
 - **Release badge** — top-nav version pill generated from git history with click-to-open recent change notes

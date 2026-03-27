@@ -20,6 +20,8 @@
 - Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap, today/yesterday practice time) and derives a learning-coach payload for the landing page.
 - Insights endpoint derives subject-aware performance guidance from completed history across all subjects.
 - Health endpoint for operational checks.
+- Math generation now uses large per-type template banks (word problems + equation styles) and stores recent template usage on each active session to reduce repetition.
+- Question generation remains lazy per question index, so updated difficulty/template logic takes effect immediately for the next unanswered question in in-progress sessions.
 
 ## Authentication
 
@@ -48,6 +50,7 @@
 - `data/users/<userId>/sessions/<sessionId>.json` — session history (filesystem) or `users/<userId>/sessions/<sessionId>.json` (blob).
 - `data/users/<userId>/insights.txt` — performance insights (filesystem) or `users/<userId>/insights.txt` (blob).
 - Session records now persist `sessionMode` so guided and quiz runs can be resumed faithfully and analyzed consistently.
+- Session records also persist `recentTemplateIds` (rolling list) so math template repetition can be suppressed across an in-progress session.
 - Azure Blob Storage uses `DefaultAzureCredential` (system-assigned managed identity in production — no shared keys).
 - Storage account: `aplcfiles2026`, blob container: `userdata`.
 - No database dependency. If DB becomes necessary later, prefer Azure SQL for ease of Azure setup.
@@ -92,8 +95,8 @@
 
 ## Subjects
 
-- **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-5.
-- **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps and the same adaptive numeric complexity levels.
+- **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-7, faster step-up behavior for sustained strong performance, and broad prompt template variety.
+- **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps, adaptive numeric complexity levels from 1-5, and broad prompt template variety.
 - **Reading**: Story-based reading comprehension with fresh session stories, corrected pace scoring, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Overall score ≥ 7 to pass.
 - `buildLearningCoach()` in `server/src/index.ts` derives lightweight coaching structures from completed sessions only: best-next-step guidance, habit signals, subject mastery stages, parent review notes, and supporting revisit metadata.
 

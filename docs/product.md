@@ -76,6 +76,8 @@ Use rule-based question generation or introduce AI early, use Azure Open AI usin
 Difficulty progression be calculated based on accuracy, first-attempt success, time, hint/reveal usage, and whether the learner needed retries or answer reveal before completing the problem
 Difficulty progression should never swing too quickly. The app should wait for a clear short-run pattern before raising or lowering challenge so Adi feels stretched but not punished, supported but not bored.
 One gradual way to raise challenge in multiplication and division is to keep the same underlying math structure while sometimes presenting it as a short real-world word problem instead of a plain numeric expression. The app should maintain a mix of direct computation and brief situational prompts so Adi practices both calculation fluency and problem interpretation.
+Math prompt generation should use a broad template bank for each math question type and avoid repeating recently used templates, targeting roughly a 1-in-30 repeat probability in normal session flow.
+Template and adaptive-difficulty upgrades should apply to in-progress sessions as soon as the next unanswered question is generated, without requiring session completion.
 Reading sessions should generate a fresh story for each new session while keeping the passage internally coherent across all pages, the summary guidance, and the comprehension quiz. The goal is to preserve novelty without sacrificing fair comprehension scoring.
 Allow him to pause & resume clock on any problem
 optimal number of questions per session to be decided by the App & AI to allow Adi to finish in 30 min broadly 

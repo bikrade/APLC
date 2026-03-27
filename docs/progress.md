@@ -124,3 +124,9 @@
 - Dark theme score/review polish completed:
   - Score and summary surfaces now use theme tokens instead of hardcoded light backgrounds
   - Reading and quiz review panels now stay aligned with dark mode styling
+- Math variety and immediate in-progress adaptation upgrade completed:
+  - Added template-driven math prompt generation for multiplication and division across decimal, fraction, percentage, and mixed question types
+  - Persisted `templateId` on generated questions and `recentTemplateIds` on sessions to reduce repetition with a rolling no-repeat window (up to 30 recent templates)
+  - Wired lazy per-question generation to use session-level template history so variety changes apply on the next unanswered question in active in-progress sessions
+  - Expanded multiplication challenge tuning (internal adaptive ceiling up to level 7, faster level-up behavior for sustained strong performance)
+  - Updated server integration tests to validate template diversity behavior without relying on brittle single-string prompt assertions

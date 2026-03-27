@@ -450,6 +450,18 @@
   color: #b45309;
 }
 
+.mobile-streak-banner {
+  display: none;
+  align-self: flex-start;
+  background: var(--color-yellow-light);
+  border: 2px solid var(--color-yellow);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #b45309;
+}
+
 .dashboard-body {
   max-width: 1180px;
   margin: 0 auto;
@@ -3103,6 +3115,13 @@
     font-size: 24px;
   }
 
+  .mobile-streak-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+
   .question-prompt {
     font-size: 28px;
   }
@@ -3747,6 +3766,12 @@ html[data-theme='dark'] .nav-release-divider {
 }
 
 html[data-theme='dark'] .nav-streak {
+  background: rgba(255, 200, 0, 0.12);
+  border-color: rgba(255, 200, 0, 0.42);
+  color: #ffd77a;
+}
+
+html[data-theme='dark'] .mobile-streak-banner {
   background: rgba(255, 200, 0, 0.12);
   border-color: rgba(255, 200, 0, 0.42);
   color: #ffd77a;

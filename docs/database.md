@@ -11,8 +11,9 @@
 - `profile.json`
   - `id`, `name`, `learningFocus`, `timezone`, `notes`
 - `sessions/<sessionId>.json`
-  - `id`, `userId`, `subject` (Multiplication | Division | Reading), `sessionMode?` (`guided` | `quiz`), `status` (active | completed), `startedAt`, `completedAt?`, `currentIndex`, `questions[]`, `answers[]`, `totalTokensUsed`, `adaptiveDifficultyLevel?`, `adaptiveMomentum?`
-  - Each question: `id`, `prompt`, `type`, `kind?` (math | reading-page | reading-summary | reading-quiz), `answer`, `tolerance`, `helpSteps[]`, `explanation`, `generated`, `title?`, `content?`, `wordCount?`, `quizItems?`
+  - `id`, `userId`, `subject` (Multiplication | Division | Reading), `sessionMode?` (`guided` | `quiz`), `status` (active | completed), `startedAt`, `completedAt?`, `currentIndex`, `questions[]`, `answers[]`, `totalTokensUsed`, `adaptiveDifficultyLevel?`, `adaptiveMomentum?`, `adaptiveQuestionsSinceChange?`, `recentTemplateIds?`
+  - `recentTemplateIds` stores a rolling list (up to 30) of recently used math template IDs so prompt repetition can be suppressed within active sessions.
+  - Each question: `id`, `prompt`, `type`, `kind?` (math | reading-page | reading-summary | reading-quiz), `templateId?`, `answer`, `tolerance`, `helpSteps[]`, `explanation`, `generated`, `title?`, `content?`, `wordCount?`, `quizItems?`
   - Each answer: `questionId`, `questionIndex`, `completed`, `isCorrect?`, `usedHelp`, `usedReveal`, `elapsedMs`, `userAnswer?`, `userTextAnswer?`, `selectedOptions?`, `attemptCount?`, `firstAttemptCorrect?`, `readingScore?`, `comprehensionScore?`, `speedScore?`, `readingWpm?`
 - `insights.txt`
   - JSON payload persisted as text for the dashboard insights view; refreshed after each completed session

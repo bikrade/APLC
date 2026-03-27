@@ -445,7 +445,15 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
     }
     session.questions = await createReadingQuestionSetAsync(session.id, readingOptions)
   } else {
-    session.questions[index] = generateQuestionByType(existing.id, existing.type, session.subject, session.adaptiveDifficultyLevel ?? 3)
+    const recentTemplateIds = session.recentTemplateIds ?? []
+    const generated = generateQuestionByType(existing.id, existing.type, session.subject, session.adaptiveDifficultyLevel ?? 3, {
+      sessionId: session.id,
+      recentTemplateIds,
+    })
+    session.questions[index] = generated
+    if (generated.templateId) {
+      session.recentTemplateIds = [...recentTemplateIds, generated.templateId].slice(-30)
+    }
   }
   await saveSession(session)
 }
