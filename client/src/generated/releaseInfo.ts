@@ -1,30 +1,30 @@
 export const releaseInfo = {
-  "version": "0.6.19",
+  "version": "0.6.26",
   "channel": "beta",
-  "displayLabel": "v0.6.19 beta",
-  "shortSha": "c4c4e2f",
-  "releaseDate": "2026-03-27",
-  "headline": "Increase math variety and adaptive pacing, plus mobile streak visibility.",
+  "displayLabel": "v0.6.26 beta",
+  "shortSha": "d1793f4",
+  "releaseDate": "2026-03-28",
+  "headline": "Fix Azure deploy image build and rollback",
   "changes": [
     {
-      "sha": "c4c4e2f",
-      "date": "2026-03-27",
-      "summary": "Increase math variety and adaptive pacing, plus mobile streak visibility."
+      "sha": "d1793f4",
+      "date": "2026-03-28",
+      "summary": "Fix Azure deploy image build and rollback"
     },
     {
-      "sha": "64c1e70",
-      "date": "2026-03-27",
-      "summary": "Increase multiplication challenge and adaptive ceiling."
+      "sha": "75cbf21",
+      "date": "2026-03-28",
+      "summary": "Fix reading launch fallback and feedback"
     },
     {
-      "sha": "1a1245b",
-      "date": "2026-03-23",
-      "summary": "Ignore unsupported ESLint 10 client bumps"
+      "sha": "5ed868c",
+      "date": "2026-03-28",
+      "summary": "Expand reading vocabulary coaching and scoring"
     },
     {
-      "sha": "45a89cf",
-      "date": "2026-03-23",
-      "summary": "Add test lint automation and dark theme polish"
+      "sha": "c89632a",
+      "date": "2026-03-28",
+      "summary": "Mark docker-validate as continue-on-error to tolerate Docker Hub rate limits"
     }
   ]
 } as const

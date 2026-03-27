@@ -10,13 +10,14 @@
 - Home view also includes daily-practice progress bars that compare today and yesterday against a profile-driven target from the learner profile.
 - Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
 - Each subject card exposes two launch modes: `Guided` for live correctness feedback and `Quiz` for quieter, end-of-session review.
-- Reading sessions run as a 6-page story, surface targeted vocabulary prompts during the passage, and can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
+- Reading sessions run as a 6-page story, now sized to roughly book-page length with explicit paragraph breaks, surface targeted vocabulary prompts during the passage, and can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
 - Reading page views can surface short checkpoint prompts, and summary views now include a compact celebrate / grow next / tomorrow coaching strip.
+- Subject cards can resume unfinished work or explicitly reset the saved in-progress session and start fresh.
 
 ## Backend
 
 - Node.js + Express + TypeScript REST API.
-- Session lifecycle endpoints: start, fetch, answer, help, reveal, pause.
+- Session lifecycle endpoints: start, fetch, answer, help, reveal, pause, and delete-in-progress for reset/restart flows.
 - Dashboard endpoint aggregates historical session data (accuracy, streaks, activity heatmap, today/yesterday practice time) and derives a learning-coach payload for the landing page.
 - Insights endpoint derives subject-aware performance guidance from completed history across all subjects.
 - Health endpoint for operational checks.
@@ -77,7 +78,7 @@
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
 - Quiz-mode math flow records correctness, hints, reveals, and timing exactly like Guided mode, but suppresses instant correctness banners after answer entry and defers the question review to the summary screen.
 - Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
-- Reading UX: `130 WPM` is the target pace, speed score is based on the percentage of that benchmark, vocabulary prompts target strong Grade 7 IB-level words in context, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
+- Reading UX: `130 WPM` is the target pace, speed score is based on the percentage of that benchmark, each page now feels more like a real middle-grade book page with paragraph spacing and 200-250 words, vocabulary prompts target strong Grade 7 IB-level words in context, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
 - Landing page UX: progress insights banner plus coaching panels help convert raw performance data into specific next steps without making the dashboard feel like an admin console.
 - Parent review UX: the same landing page exposes celebration, watchlist, and support-move notes so adults can quickly understand what to reinforce.
 - CSS animations: slideUp, popIn, celebBounce, fadeInOut, pulse, shake.
@@ -117,7 +118,7 @@
 - **E2E**: Playwright + Chromium (`tests/e2e/app.spec.ts`). Covers Multiplication wrong-answer flow, Division session launch, and Reading quiz-mode completion for fast readers.
 - **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`):
   - **CI** (all branches): lint, build, Vitest unit tests, Playwright E2E tests.
-  - **CD** (main only): OIDC Azure login → ACR image build → Container App update → health check verification.
+  - **CD** (main only): OIDC Azure login → GitHub-runner Docker Buildx push to ACR → Container App update → health check verification.
   - Zero-downtime deployment with `/health` probe validation.
 
 ## Risks

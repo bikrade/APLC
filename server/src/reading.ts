@@ -7,6 +7,8 @@ const READING_TARGET_WPM = 130
 const READING_QUIZ_THRESHOLD_WPM = 150
 const READING_WARNING_THRESHOLD_WPM = 180
 const READING_PAGE_COUNT = 6
+const READING_PAGE_WORD_MIN = 200
+const READING_PAGE_WORD_MAX = 250
 
 type StoryBlueprint = {
   place: string
@@ -142,6 +144,51 @@ function splitIntoSentences(text: string): string[] {
   return (matches ?? [trimmed]).map((sentence) => sentence.trim()).filter(Boolean)
 }
 
+function formatReadingPageContent(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+
+  const sentences = splitIntoSentences(trimmed)
+  if (sentences.length < 3) {
+    return trimmed
+  }
+
+  const totalWords = countWords(trimmed)
+  const paragraphCount = sentences.length >= 9 || totalWords >= 230 ? 3 : 2
+  const targetWordsPerParagraph = Math.max(1, Math.round(totalWords / paragraphCount))
+  const paragraphs: string[] = []
+  let currentParagraph: string[] = []
+  let currentWords = 0
+
+  for (let index = 0; index < sentences.length; index += 1) {
+    const sentence = sentences[index] ?? ''
+    const sentenceWords = countWords(sentence)
+    const remainingSentences = sentences.length - index - 1
+    const remainingParagraphs = paragraphCount - paragraphs.length - 1
+    const enoughSentencesLeft = remainingSentences >= remainingParagraphs
+
+    currentParagraph.push(sentence)
+    currentWords += sentenceWords
+
+    const shouldBreak = paragraphs.length < paragraphCount - 1
+      && currentParagraph.length >= 2
+      && currentWords >= targetWordsPerParagraph
+      && enoughSentencesLeft
+
+    if (shouldBreak) {
+      paragraphs.push(currentParagraph.join(' ').trim())
+      currentParagraph = []
+      currentWords = 0
+    }
+  }
+
+  if (currentParagraph.length > 0) {
+    paragraphs.push(currentParagraph.join(' ').trim())
+  }
+
+  return paragraphs.join('\n\n')
+}
+
 function rebalanceStoryPages(rawPages: string[], targetPageCount = READING_PAGE_COUNT): string[] {
   const sourceText = rawPages.map((page) => page.trim()).filter(Boolean).join('\n\n')
   if (!sourceText) return []
@@ -154,41 +201,80 @@ function rebalanceStoryPages(rawPages: string[], targetPageCount = READING_PAGE_
 
   if (units.length === 0) return []
 
-  const suffixWordTotals = new Array<number>(units.length)
-  let rollingWords = 0
+  const unitWordCounts = units.map((unit) => countWords(unit))
+  const suffixWordTotals = new Array<number>(units.length + 1).fill(0)
   for (let index = units.length - 1; index >= 0; index -= 1) {
-    rollingWords += countWords(units[index] ?? '')
-    suffixWordTotals[index] = rollingWords
+    suffixWordTotals[index] = (suffixWordTotals[index + 1] ?? 0) + (unitWordCounts[index] ?? 0)
   }
 
   const pages: string[] = []
-  let currentUnits: string[] = []
-  let currentWords = 0
+  let cursor = 0
 
-  for (let index = 0; index < units.length; index += 1) {
-    const unit = units[index] ?? ''
-    const unitWords = countWords(unit)
-    const remainingUnits = units.length - index - 1
-    const pagesRemainingIncludingCurrent = targetPageCount - pages.length
-    const pagesRemainingAfterCurrent = pagesRemainingIncludingCurrent - 1
-    const targetWordsForCurrent = Math.max(1, Math.ceil((suffixWordTotals[index] ?? unitWords) / pagesRemainingIncludingCurrent))
-    const shouldBreakBeforeUnit = currentUnits.length > 0
-      && pages.length < targetPageCount - 1
-      && currentWords >= targetWordsForCurrent
-      && remainingUnits >= pagesRemainingAfterCurrent
+  for (let pageIndex = 0; pageIndex < targetPageCount && cursor < units.length; pageIndex += 1) {
+    const remainingPages = targetPageCount - pageIndex
 
-    if (shouldBreakBeforeUnit) {
-      pages.push(currentUnits.join(' '))
-      currentUnits = []
-      currentWords = 0
+    if (remainingPages === 1) {
+      pages.push(units.slice(cursor).join(' ').trim())
+      cursor = units.length
+      break
     }
 
-    currentUnits.push(unit)
-    currentWords += unitWords
+    const pageUnits: string[] = []
+    let pageWords = 0
+
+    while (cursor < units.length) {
+      const unit = units[cursor] ?? ''
+      const unitWords = unitWordCounts[cursor] ?? 0
+      const remainingWords = suffixWordTotals[cursor] ?? unitWords
+      const wordsAfterTaking = remainingWords - unitWords
+      const minWordsForRest = READING_PAGE_WORD_MIN * (remainingPages - 1)
+      const targetWordsForCurrent = Math.min(
+        READING_PAGE_WORD_MAX,
+        Math.max(READING_PAGE_WORD_MIN, Math.round(remainingWords / remainingPages)),
+      )
+      const projectedWords = pageWords + unitWords
+      const mustTake = pageUnits.length === 0 || pageWords < READING_PAGE_WORD_MIN
+      const keepsEnoughForRest = wordsAfterTaking >= minWordsForRest
+      const helpsTarget = Math.abs(projectedWords - targetWordsForCurrent) <= Math.abs(pageWords - targetWordsForCurrent)
+      const withinMax = projectedWords <= READING_PAGE_WORD_MAX
+
+      if (!mustTake && (!keepsEnoughForRest || !withinMax || !helpsTarget)) {
+        break
+      }
+
+      pageUnits.push(unit)
+      pageWords = projectedWords
+      cursor += 1
+
+      if (pageWords >= targetWordsForCurrent && (suffixWordTotals[cursor] ?? 0) >= minWordsForRest) {
+        break
+      }
+    }
+
+    while (cursor < units.length && pageWords < READING_PAGE_WORD_MIN) {
+      const unit = units[cursor] ?? ''
+      const unitWords = unitWordCounts[cursor] ?? 0
+      const minWordsForRest = READING_PAGE_WORD_MIN * (remainingPages - 1)
+      if ((suffixWordTotals[cursor + 1] ?? 0) < minWordsForRest || pageWords + unitWords > READING_PAGE_WORD_MAX) {
+        break
+      }
+      pageUnits.push(unit)
+      pageWords += unitWords
+      cursor += 1
+    }
+
+    if (pageUnits.length > 0) {
+      pages.push(pageUnits.join(' ').trim())
+    }
   }
 
-  if (currentUnits.length > 0) {
-    pages.push(currentUnits.join(' '))
+  if (cursor < units.length) {
+    const overflow = units.slice(cursor).join(' ').trim()
+    if (pages.length === 0) {
+      pages.push(overflow)
+    } else {
+      pages[pages.length - 1] = `${pages[pages.length - 1]} ${overflow}`.trim()
+    }
   }
 
   while (pages.length > targetPageCount) {
@@ -220,7 +306,7 @@ function rebalanceStoryPages(rawPages: string[], targetPageCount = READING_PAGE_
     pages.splice(splitIndex, 1, firstHalf, secondHalf)
   }
 
-  return pages.map((page) => page.trim()).filter(Boolean)
+  return pages.map((page) => formatReadingPageContent(page)).filter(Boolean)
 }
 
 function distributeVocabularyAcrossPages(vocabularyFocus: ReadingVocabularyItem[], pageCount: number): ReadingVocabularyItem[][] {
@@ -254,12 +340,12 @@ function buildFallbackStory(sessionId: string): ReadingStory {
   const prepAction = PREP_ACTIONS[(seed >> 8) % PREP_ACTIONS.length] ?? PREP_ACTIONS[0]!
   const title = buildStoryTitle(blueprint, titlePrefix, seed)
   const pages = [
-    `${blueprint.mainName} spent many afternoons in ${blueprint.elderName}'s workshop in ${blueprint.place}, where broken instruments and careful notebooks filled every shelf. One evening, ${blueprint.mainName} discovered an old ${blueprint.fixObject} called the ${title}. ${blueprint.elderName}, the town's ${blueprint.elderRole}, explained that people once used it to respond to ${blueprint.problem}. The device never predicted weather by magic. It helped the town notice patterns through ${blueprint.dataTool}. That idea stayed with ${blueprint.mainName}: a good warning system worked only if people learned how to read it together.`,
-    `The next day ${blueprint.mainName} showed the discovery to ${blueprint.friendName}, who loved diagrams and mechanical puzzles. Together they studied ${noteObject} describing how the ${title} combined weather clues into one signal the whole town could understand. The notes said the tool had once helped protect the ${blueprint.riskArea} when storms arrived quickly. Inside a neglected tower room, the friends found missing instructions about the parts that had to work together and the exact moment the town should ${blueprint.warningAction}. Suddenly the mystery became a practical project.`,
-    `For the next week, ${blueprint.mainName} and ${blueprint.friendName} built a routine of testing small parts, recording daily changes, and comparing fresh observations against the town's older notes. ${blueprint.elderName} quietly guided them without taking over, and the two students slowly understood how the instrument translated scattered details into one clear warning. They realized the real challenge was bigger than repairing metal. If the town did not trust shared evidence, the restored ${title} would fail even if every gear moved perfectly.`,
-    `Not every trial went well. One afternoon, the restored dial pointed toward a warning when the sky cleared instead of darkening, and a few adults laughed at the whole effort. ${blueprint.mainName} felt the embarrassment burn, but ${blueprint.friendName} insisted they review every note before giving up. Together they discovered that one older chart had been copied during a season when the canal walls were under repair, which changed how the wind and water affected the signal. Correcting that mistake taught them something more important than pride: evidence had to be checked carefully, especially when a wrong conclusion could make people stop listening.`,
-    `As storm season approached, the air shifted with ${weatherCue}, and local crews noticed unusual changes. ${blueprint.mainName} and ${blueprint.friendName} presented their findings to ${blueprint.helperName}, the ${blueprint.helperRole}, and to several adults who first doubted the project. Instead of asking for blind trust, they showed records, explained patterns, and demonstrated how the tool worked. When conditions finally matched the warning signs, ${blueprint.helperName} agreed that the town should ${blueprint.warningAction}. Because people had seen the evidence, they acted faster and prepared the ${blueprint.riskArea} before the weather turned dangerous.`,
-    `The storm still arrived with force, but the town was ready. People ${prepAction}, routes were cleared, and the most vulnerable area stayed far safer than usual. The next morning, adults returned to the tower to understand the restored ${title} more carefully. What mattered most was not the old device alone, but the habit it rebuilt. ${blueprint.lesson.charAt(0).toUpperCase()}${blueprint.lesson.slice(1)}. ${blueprint.mainName} realized that the project had not only repaired a forgotten tool. It had taught the town how to notice, think, and respond as one community again.`,
+    `${blueprint.mainName} spent many afternoons in ${blueprint.elderName}'s workshop in ${blueprint.place}, where broken instruments, bent brass hands, and careful notebooks filled every shelf from floor to ceiling. On most days the room smelled like oil, dust, and rain-soaked rope drifting in from the harbor, and ${blueprint.mainName} liked the feeling that every object had once mattered to someone. One evening, while searching a high cabinet for a missing screwdriver, ${blueprint.mainName} discovered an old ${blueprint.fixObject} called the ${title}. Its frame was scratched, its glass had clouded with age, and one side panel hung open as if someone had walked away in the middle of a repair. ${blueprint.elderName}, the town's ${blueprint.elderRole}, explained that people once used it to respond to ${blueprint.problem}. The device never predicted weather by magic. It helped the town notice patterns through ${blueprint.dataTool}. As ${blueprint.elderName} spoke, ${blueprint.mainName} imagined earlier families looking up at the signal and changing plans before trouble arrived. That idea stayed firmly in mind: a good warning system worked only if people learned how to read it together and trusted one another enough to act in time. Before leaving that evening, ${blueprint.mainName} copied the faded labels from the instrument into a notebook, convinced that even tiny clues might matter later.`,
+    `The next day ${blueprint.mainName} showed the discovery to ${blueprint.friendName}, who loved diagrams, coded notes, and mechanical puzzles with hidden logic. Together they carried the instrument to a quiet table and studied ${noteObject} describing how the ${title} combined weather clues into one signal the whole town could understand. The notes said the tool had once helped protect the ${blueprint.riskArea} when storms arrived quickly, especially on days when the sky looked harmless until the last minute. Inside a neglected tower room, the friends found missing instructions about the parts that had to work together and the exact moment the town should ${blueprint.warningAction}. Some pages were smeared, some measurements were half erased, and one folded sketch had been tucked inside a loose wall panel as if someone meant to return for it later. That discovery made the mystery feel urgent instead of merely interesting. By the time the sun dropped behind the rooftops, the project no longer seemed like a curiosity from the past. It felt like a responsibility waiting for someone patient enough to finish it. They left carrying copies of the clearest notes and a short list of missing parts to search for in the workshop bins.`,
+    `For the next week, ${blueprint.mainName} and ${blueprint.friendName} built a routine of testing small parts, recording daily changes, and comparing fresh observations against the town's older notes. They climbed the tower at dawn, checked shadows and wind direction before school, and returned in the late afternoon to compare what they had seen with measurements from earlier seasons. ${blueprint.elderName} quietly guided them without taking over, asking questions instead of handing them answers, and the two students slowly understood how the instrument translated scattered details into one clear warning. They learned that one dial mattered only when read beside another, that a single clue could mislead, and that the old builders had designed the whole system to force careful thinking. They also realized the real challenge was bigger than repairing metal. If the town did not trust shared evidence, the restored ${title} would fail even if every gear moved perfectly. The friends began practicing how they would explain the system to adults who wanted quick certainty instead of patient proof, because restoring the machine and restoring confidence were becoming the same problem. Some evenings they rehearsed their explanation aloud, stopping each time a sentence sounded impressive but not clear enough to earn trust.`,
+    `Not every trial went well. One afternoon, the restored dial pointed toward a warning when the sky cleared instead of darkening, and a few adults laughed at the whole effort as they crossed the square below. ${blueprint.mainName} felt the embarrassment burn all the way into the evening, especially after hearing one shopkeeper mutter that children liked complicated stories more than careful work. But ${blueprint.friendName} insisted they review every note before giving up. Together they spread their papers across the workshop floor and retraced each assumption, each copied number, and each change they had made to the frame. At last they discovered that one older chart had been copied during a season when the canal walls were under repair, which changed how the wind and water affected the signal. Correcting that mistake taught them something more important than pride: evidence had to be checked carefully, especially when a wrong conclusion could make people stop listening. Instead of quitting, the friends wrote a clearer set of comparison notes for themselves, marking which observations were dependable and which had to be tested again before they could be shared with anyone else. That new chart, written in their own words and arranged line by line, became the first version of the guide they truly trusted.`,
+    `As storm season approached, the air shifted with ${weatherCue}, and local crews began noticing unusual changes that matched the pattern the friends had been tracing for days. ${blueprint.mainName} and ${blueprint.friendName} presented their findings to ${blueprint.helperName}, the ${blueprint.helperRole}, and to several adults who had first doubted the project. This time they did not rush. They laid out the records in order, showed where old notes and new measurements agreed, and demonstrated how the instrument worked when the clues were read together instead of one at a time. Instead of asking for blind trust, they invited questions and answered them with evidence. When conditions finally matched the warning signs, ${blueprint.helperName} agreed that the town should ${blueprint.warningAction}. Workers spread the message block by block, families repeated the signal to neighbors, and people who had doubted the students earlier found themselves following the plan the pair had explained. Because the town had seen the records and understood the reason for the warning, people acted faster and prepared the ${blueprint.riskArea} before the weather turned dangerous. Even those who still felt uncertain could repeat the pattern back to someone else, which showed that the explanation was working.`,
+    `The storm still arrived with force, but the town was ready long before the first hard rain struck the roofs. People ${prepAction}, routes were cleared, and the most vulnerable area stayed far safer than usual because the warning had come early enough to matter. Through the night, ${blueprint.mainName} listened to the weather thud against shutters and wondered how differently the evening might have gone if the signal had remained forgotten in dust. The next morning, adults returned to the tower to understand the restored ${title} more carefully, not as a relic but as a tool that had become trustworthy again through disciplined observation. What mattered most was not the old device alone, but the habit it rebuilt. ${blueprint.lesson.charAt(0).toUpperCase()}${blueprint.lesson.slice(1)}. ${blueprint.mainName} realized that the project had not only repaired a forgotten tool. It had taught the town how to notice, think, explain, and respond as one community again. Even after the streets dried, people kept copies of the new notes, and the students' work became part of how ${blueprint.place} prepared for the seasons ahead instead of something impressive that would be admired and then forgotten. Weeks later, the new guide the friends had written was placed beside the original notebooks so future readers could see how the town had learned to trust the signal again.`,
   ]
 
   const quizItems: ReadingQuizItem[] = [
@@ -405,6 +491,14 @@ export function createReadingQuestionSet(sessionId: string): Question[] {
     generated: true,
   }))
   return [...pages, createSummaryQuestion(`q-${story.pages.length + 1}`, story)]
+}
+
+export function readingPageWordTargets() {
+  return {
+    min: READING_PAGE_WORD_MIN,
+    max: READING_PAGE_WORD_MAX,
+    pageCount: READING_PAGE_COUNT,
+  }
 }
 
 function extractReadingSessionSignal(session: SessionRecord): { readingScore: number; comprehensionScore: number; readingWpm: number } | null {

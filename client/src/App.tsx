@@ -232,6 +232,13 @@ type StartSessionResponse = {
   difficultyLevel?: number
 }
 
+function splitReadingParagraphs(content?: string): string[] {
+  return String(content ?? '')
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+}
+
 type SubmitAnswerResponse = {
   isCorrect: boolean
   explanation: string
@@ -1251,6 +1258,35 @@ function App() {
     }
   }
 
+  const deleteInProgressSession = useCallback(async (activeSessionId: string): Promise<void> => {
+    const res = await apiFetch(`/sessions/in-progress/${selectedUserId}/${activeSessionId}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      throw new Error(await readApiErrorMessage(res, 'Failed to discard in-progress session'))
+    }
+  }, [apiFetch, readApiErrorMessage, selectedUserId])
+
+  const startFreshSession = async (subject: Subject, activeSessionId: string): Promise<void> => {
+    setLaunchState({ subject, mode: 'start' })
+    setError('')
+    setIsBusy(true)
+    try {
+      await deleteInProgressSession(activeSessionId)
+      await Promise.all([
+        computeDashStats(selectedUserId),
+        computeInProgress(selectedUserId),
+      ])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset the saved session')
+      setLaunchState(null)
+      setIsBusy(false)
+      return
+    }
+    setIsBusy(false)
+    await startSession(subject, sessionModePreferences[subject])
+  }
+
   /* ── Resume In-Progress Session ─────────────────────────────── */
   const resumeSession = async (resumeSessionId: string): Promise<void> => {
     setError('')
@@ -2005,6 +2041,16 @@ function App() {
                         ? `Continue ${getSessionModeMeta(latestInProgressSession.sessionMode).shortLabel} →`
                         : `Start ${getSessionModeMeta(displayedSessionMode).shortLabel} →`}
                     </button>
+                    {latestInProgressSession && (
+                      <button
+                        type="button"
+                        className="btn-start-fresh"
+                        onClick={() => void startFreshSession(subject.id, latestInProgressSession.sessionId)}
+                        disabled={isBusy}
+                      >
+                        Reset And Start Fresh
+                      </button>
+                    )}
                     {lastCompletedSession && (
                       <button
                         type="button"
@@ -2395,7 +2441,9 @@ function App() {
                   <div className="reading-target-chip">Target pace: 130 WPM</div>
                 </div>
                 <div className="reading-page-content">
-                  {currentQuestion.content}
+                  {splitReadingParagraphs(currentQuestion.content).map((paragraph, index) => (
+                    <p key={`${currentQuestion.id}-paragraph-${index + 1}`} className="reading-page-paragraph">{paragraph}</p>
+                  ))}
                 </div>
                 {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
                   <div className="reading-vocabulary-card">

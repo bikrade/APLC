@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createSessionToken, getPublicGoogleClientId, isGoogleAuthConfigured, verifyGoogleCredential, verifySessionToken } from './auth'
 import {
+  deleteSession,
   deleteLegacySessionFiles,
   listAllSessions,
   pruneActiveSessionsForSubject,
@@ -1295,6 +1296,7 @@ app.param('sessionId', (req, res, next, sessionId) => {
 app.use('/users', requireAuth)
 app.use('/dashboard/:userId', requireAuth)
 app.use('/sessions/in-progress/:userId', requireAuth)
+app.use('/sessions/in-progress/:userId/:sessionId', requireAuth)
 app.use('/insights/:userId', requireAuth)
 app.use('/session/start', requireAuth)
 app.use('/session/:userId/:sessionId', requireAuth)
@@ -1502,6 +1504,31 @@ app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
     res.json({
       sessions,
     })
+}))
+
+app.delete('/sessions/in-progress/:userId/:sessionId', asyncHandler(async (req, res) => {
+  const userId = getRouteParam(req, 'userId')
+  const sessionId = getRouteParam(req, 'sessionId')
+  const session = (await listAllSessions(userId)).find((candidate) => candidate.id === sessionId)
+
+  if (!session) {
+    res.status(404).json({ error: 'Session not found.' })
+    return
+  }
+
+  if (session.status !== 'active') {
+    res.status(409).json({ error: 'Only in-progress sessions can be deleted.' })
+    return
+  }
+
+  sessions.delete(sessionKey(userId, sessionId))
+  await deleteSession(userId, sessionId)
+
+  res.json({
+    deleted: true,
+    sessionId,
+    subject: session.subject,
+  })
 }))
 
 app.get('/insights/:userId', asyncHandler(async (req, res) => {

@@ -85,6 +85,12 @@ function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
+const READING_PAGE_COUNT = 6
+const READING_PAGE_WORD_MIN = 200
+const READING_PAGE_WORD_MAX = 250
+const READING_STORY_MIN_WORDS = READING_PAGE_COUNT * READING_PAGE_WORD_MIN
+const READING_STORY_MAX_WORDS = READING_PAGE_COUNT * READING_PAGE_WORD_MAX
+
 export async function generateHintSteps(prompt: string): Promise<string[]> {
   const content = await chatCompletion(
     [
@@ -229,7 +235,9 @@ function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
 
   if (!title) throw new Error('OpenAI reading response is missing a title.')
   if (pages.length < 4 || pages.length > 8) throw new Error(`OpenAI reading response must include 4 to 8 story chunks, received ${pages.length}.`)
-  if (totalWords < 1000) throw new Error(`OpenAI reading response is too short for the target session length (${totalWords} words).`)
+  if (totalWords < READING_STORY_MIN_WORDS) {
+    throw new Error(`OpenAI reading response is too short for the target session length (${totalWords} words).`)
+  }
   if (!summaryGuidance) throw new Error('OpenAI reading response is missing summary guidance.')
   if (keywordGroups.length < 8) throw new Error('OpenAI reading response needs at least 8 keyword groups.')
   if (vocabularyFocus.length < 4) throw new Error('OpenAI reading response needs at least 4 vocabulary focus items.')
@@ -387,7 +395,8 @@ Return ONLY a JSON object with this exact shape:
 }
 
 Story requirements:
-- The full story should be long enough for a serious 6-page reading session: roughly 1100-1450 words for core, 1250-1550 for stretch, or 1400-1700 for advanced.
+- The full story should be long enough for a serious 6-page reading session with pages that feel like a real middle-grade book: about ${READING_PAGE_WORD_MIN}-${READING_PAGE_WORD_MAX} words per final page after repagination.
+- That means roughly ${READING_STORY_MIN_WORDS}-${READING_STORY_MAX_WORDS} total words overall. Stay inside that range unless there is a compelling narrative reason to be only slightly above it.
 - Return the story in 4 to 8 natural chunks inside the pages array. Chunk lengths do not need to match. The app will repaginate the story into exactly 6 reading pages.
 - The title must be fresh and not resemble any prior title supplied by the user.
 - The protagonist should feel age-appropriate for upper elementary / middle school.

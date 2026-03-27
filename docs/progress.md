@@ -131,3 +131,12 @@
   - Wired lazy per-question generation to use session-level template history so variety changes apply on the next unanswered question in active in-progress sessions
   - Expanded multiplication challenge tuning (internal adaptive ceiling up to level 7, faster level-up behavior for sustained strong performance)
   - Updated server integration tests to validate template diversity behavior without relying on brittle single-string prompt assertions
+- Reading and reset-flow polish completed:
+  - Reading stories are now repaginated into six book-like pages targeting roughly 200-250 words each rather than shorter passage fragments
+  - Reading pages now include explicit paragraph breaks so the UI feels closer to a real book page instead of one packed text block
+  - OpenAI reading-story validation and prompt constraints now enforce the longer six-page session length more directly
+  - The dashboard subject cards now expose a `Reset And Start Fresh` action that deletes any in-progress session and starts a fresh run with the latest UI and generation logic
+  - The in-progress session delete/reset flow is now covered for Reading, Multiplication, and Division in the server regression suite
+- Deployment workflow documentation corrected and revalidated:
+  - CI/CD docs now reflect the current GitHub-runner Docker Buildx push-to-ACR flow instead of the older `az acr build` path
+  - Production-image validation remains part of the pipeline through the dedicated Docker validation job before main-branch deploys

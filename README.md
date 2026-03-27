@@ -8,11 +8,12 @@ An adaptive, personalized learning web app for Grade 6 math and reading practice
 
 - **Multiplication** — decimal, fraction, percentage, and mixed question types with adaptive level shifting, expanded challenge ceiling (up to internal level 7), and broad word-problem template variety
 - **Division** — same question types with division-specific help steps plus expanded word-problem template variety
-- **Reading** — fresh AI-written middle-grade stories, corrected server-verified WPM scoring, fast-reader quiz mode, and comprehension warnings
+- **Reading** — fresh AI-written middle-grade stories repaginated into book-like 6-page reading sessions with paragraph breaks, corrected server-verified WPM scoring, fast-reader quiz mode, and comprehension warnings
 - **AI-powered** — OpenAI (gpt-4o-mini) generates questions, hints, and per-answer explanations
 - **Adaptive difficulty** — uses historical subject performance plus live first-attempt behavior, pace, and support usage (multiplication can step up faster when Adi is consistently strong)
 - **Template variety guardrails** — math question generation tracks recently used templates and avoids repeating them in a rolling 30-question window when possible
 - **In-progress upgrades** — new difficulty and template-variety behavior applies as soon as the next unanswered question is generated (no need to complete the current session first)
+- **Reset and restart** — any subject card with an unfinished session can now discard that in-progress work and start a fresh session immediately with the latest UI and generation logic
 - **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, today-vs-yesterday practice bars against a profile-driven daily goal, best-next-step coaching, mastery, detailed insights, and parent review
 - **Session modes** — each subject can start in `Guided` mode with live correctness feedback or `Quiz` mode with end-of-session review
 - **Release badge** — top-nav version pill generated from git history with click-to-open recent change notes
@@ -110,7 +111,7 @@ APLC is deployed to Azure Container Apps with:
 - **Application Insights** — auto-collected telemetry (requests, dependencies, exceptions)
 - **Health probes** — liveness (30s), readiness (10s), startup (5s)
 - **Alerts** — error spike + container restart monitoring
-- **CI/CD** — push to `main` → lint + test → ACR build → ACA deploy → health verify
+- **CI/CD** — push to `main` → lint + test → Docker production image validation → GitHub-runner Docker Buildx push to ACR → ACA deploy → health verify
 
 See [docs/deployment.md](docs/deployment.md) for full details.
 
@@ -134,6 +135,7 @@ Notes:
 - `npm run test:client` runs client test linting before Vitest.
 - `npm run test:server` runs server test linting plus source and test typechecks before Vitest.
 - `npm run test:e2e` runs Playwright linting before browser automation.
+- The production image path used by CI/CD is additionally validated by the workflow's Docker Buildx job before deployment.
 
 ## Documentation
 

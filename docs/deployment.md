@@ -114,12 +114,13 @@ The lint and test automation is wired through package scripts rather than duplic
 ### CD (main branch only)
 
 1. **Azure Login** via OIDC (federated credentials, no stored secrets)
-2. **ACR Build** — Docker image built in ACR (`aplc:<sha>` + `aplc:latest`)
-3. **Update secrets** — syncs Container Apps secrets from GitHub secrets
-4. **Capture active revision** — stores the last known good Container App revision
-5. **Deploy** — updates Container App with new image + env vars
-6. **Smoke check** — verifies `/`, `/health`, and `/config/auth`
-7. **Rollback on failure** — re-activates the previous revision if smoke checks fail
+2. **Log in to ACR** — GitHub Actions authenticates Docker to the target registry
+3. **Build and push image** — Docker Buildx builds on the GitHub runner and pushes `aplc:<sha>` plus `aplc:latest` to ACR
+4. **Update secrets** — syncs Container Apps secrets from GitHub secrets
+5. **Capture active revision** — stores the last known good Container App revision
+6. **Deploy** — updates Container App with the new image + env vars
+7. **Smoke check** — verifies `/`, `/health`, and `/config/auth`
+8. **Rollback on failure** — re-activates the previous revision if smoke checks fail
 
 ### GitHub Secrets (11)
 
@@ -166,14 +167,27 @@ The repository now includes dedicated security automation:
 ## Manual Deployment
 
 ```bash
-# Build and push image
-az acr build --registry aplcregistry2026 --image aplc:latest --file Dockerfile .
+# Log in to ACR
+docker login aplcregistry2026.azurecr.io
+
+# Build and push image from the local machine or CI runner
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile \
+  -t aplcregistry2026.azurecr.io/aplc:latest \
+  --push \
+  .
 
 # Update container app
 az containerapp update \
   -n aplc-app -g aplc-rg \
   --image aplcregistry2026.azurecr.io/aplc:latest
 ```
+
+Why the workflow uses runner-side Docker builds:
+
+- It avoids Docker Hub pull-rate issues encountered with `az acr build`.
+- It matches the production image validation path used in the `docker-validate` GitHub Actions job.
 
 ## Infrastructure as Code
 

@@ -2,7 +2,7 @@ import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionRecord } from '../src/types'
 import { generateQuestionByType } from '../src/utils'
-import { buildReadingGenerationProfile, createReadingQuestionSet, createReadingQuestionSetAsync } from '../src/reading'
+import { buildReadingGenerationProfile, createReadingQuestionSet, createReadingQuestionSetAsync, readingPageWordTargets } from '../src/reading'
 import { readSavedSession, setupTestApp, writeSession } from './helpers'
 
 let cleanupCurrent: (() => Promise<void>) | null = null
@@ -244,6 +244,53 @@ describe('APLC backend', () => {
     const inProgress = await request(ctx.app).get('/sessions/in-progress/adi')
     expect(inProgress.status).toBe(200)
     expect(inProgress.body.sessions).toHaveLength(0)
+  })
+
+  test('builds reading pages at book-like length for middle-grade readers', () => {
+    const questions = createReadingQuestionSet('reading-length-check')
+    const readingPages = questions.filter((question) => question.kind === 'reading-page')
+    const targets = readingPageWordTargets()
+
+    expect(readingPages).toHaveLength(targets.pageCount)
+    for (const page of readingPages) {
+      expect(page.wordCount).toBeGreaterThanOrEqual(targets.min)
+      expect(page.wordCount).toBeLessThanOrEqual(targets.max)
+      expect(page.content).toContain('\n\n')
+    }
+  })
+
+  ;(['Reading', 'Multiplication', 'Division'] as const).forEach((subject) => {
+    test(`deletes an in-progress ${subject} session so a fresh one can be started`, async () => {
+      const ctx = await setupTestApp()
+      cleanupCurrent = ctx.cleanup
+
+      const start = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject,
+      })
+      const sessionId = start.body.sessionId as string
+
+      expect(start.status).toBe(200)
+
+      const remove = await request(ctx.app).delete(`/sessions/in-progress/adi/${sessionId}`)
+
+      expect(remove.status).toBe(200)
+      expect(remove.body).toMatchObject({ deleted: true, sessionId, subject })
+
+      const inProgress = await request(ctx.app).get('/sessions/in-progress/adi')
+      expect(inProgress.status).toBe(200)
+      expect(inProgress.body.sessions).toHaveLength(0)
+
+      const restarted = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject,
+      })
+
+      expect(restarted.status).toBe(200)
+      expect(restarted.body.subject).toBe(subject)
+      expect(restarted.body.questions[0].prompt).toBeTruthy()
+      expect(restarted.body.questions[0].kind).toBe(subject === 'Reading' ? 'reading-page' : 'math')
+    })
   })
 
   test('switches fast reading into a comprehension quiz and warns about high speed', async () => {

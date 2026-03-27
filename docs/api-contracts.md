@@ -17,12 +17,18 @@
 - `GET /dashboard/:userId`
 - `GET /insights/:userId`
 - `GET /sessions/in-progress/:userId`
+- `DELETE /sessions/in-progress/:userId/:sessionId`
 - `POST /session/start`
 - `GET /session/:userId/:sessionId`
 - `POST /session/:userId/:sessionId/answer`
 - `POST /session/:userId/:sessionId/help`
 - `POST /session/:userId/:sessionId/reveal`
 - `POST /session/:userId/:sessionId/pause`
+
+Reset / restart note:
+
+- The app uses `DELETE /sessions/in-progress/:userId/:sessionId` when the learner chooses `Reset And Start Fresh` on a subject card.
+- This deletes the saved active session so the next `POST /session/start` creates a fresh session with the latest question-generation and UI behavior.
 
 ## Request Schemas
 
@@ -67,6 +73,7 @@
     - `revisitQueue[]`: `{ subject, skill, reason, action }`
     - `parentReview`: `{ celebration[], watchlist[], supportMoves[] }`
 - `GET /sessions/in-progress/:userId` -> `{ sessions: [{ sessionId, startedAt, questionsAnswered, totalQuestions, accuracy, subject, sessionMode }] }`
+- `DELETE /sessions/in-progress/:userId/:sessionId` -> `{ deleted: true, sessionId, subject }`
 - `GET /insights/:userId` -> `{ hasEnoughData, message, strengths[], improvements[], recommendedFocus[], bySubject[], overall }`
   - `overall`: `{ completedSessions, totalQuestionsAnswered, strongestSubject, needsAttentionSubject, subjectSessionBreakdown }`
 - `POST /session/start` -> `{ sessionId, subject, questionCount, questions[], answers[], currentIndex, totalTokensUsed, difficultyLevel, sessionMode }`
@@ -83,6 +90,7 @@
 - `401` when authentication is required or session token is expired/invalid.
 - `403` when authenticated user tries to access another user's data.
 - `404` when user profile or session is missing.
+- `409` when trying to delete a session that is not currently in progress.
 - `429` when rate limit is exceeded (includes `Retry-After` header).
 - `502` when OpenAI hint generation fails.
 - `503` when Google auth endpoint is called but auth is not configured.
