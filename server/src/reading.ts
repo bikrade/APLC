@@ -510,11 +510,7 @@ export async function createReadingQuestionSetAsync(
     }
   }
 
-  if (process.env.NODE_ENV === 'test' || process.env.ALLOW_LOCAL_READING_FALLBACK === 'true') {
-    return createReadingQuestionSet(sessionId)
-  }
-
-  throw new Error('Reading generation requires OpenAI configuration. Set OPENAI_API_KEY to enable reading stories.')
+  return createReadingQuestionSet(sessionId)
 }
 
 export function getReadingGenerationInputs(allSessions: SessionRecord[]): ReadingGenerationProfile & { priorTitles: string[] } {

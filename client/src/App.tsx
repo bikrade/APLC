@@ -866,6 +866,26 @@ function App() {
     }
   }, [authToken])
 
+  const readApiErrorMessage = useCallback(async (res: Response, fallbackMessage: string): Promise<string> => {
+    try {
+      const contentType = res.headers.get('content-type') ?? ''
+      if (contentType.includes('application/json')) {
+        const payload = await res.json() as { error?: string }
+        if (payload.error?.trim()) {
+          return payload.error.trim()
+        }
+      } else {
+        const text = (await res.text()).trim()
+        if (text) {
+          return text
+        }
+      }
+    } catch {
+      // Fall through to the default message.
+    }
+    return fallbackMessage
+  }, [])
+
   const currentQuestion = questions[viewIndex]
   const currentAnswerState = answers[viewIndex]
   const isReadingSession = sessionSubject === 'Reading'
@@ -1186,8 +1206,10 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: selectedUserId, questionCount: 12, subject, sessionMode: mode }),
-      })
-      if (!res.ok) throw new Error('Failed to start session')
+      }, undefined, subject === 'Reading' ? 45000 : 12000)
+      if (!res.ok) {
+        throw new Error(await readApiErrorMessage(res, 'Failed to start session'))
+      }
       const data = (await res.json()) as StartSessionResponse
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
@@ -1216,7 +1238,13 @@ function App() {
       }
       setStage('session')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Session start failed')
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError(subject === 'Reading'
+          ? 'Reading story generation is taking longer than expected. Please try again in a moment.'
+          : 'The request took too long. Please try again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Session start failed')
+      }
     } finally {
       setLaunchState(null)
       setIsBusy(false)

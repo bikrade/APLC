@@ -2,7 +2,7 @@ import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionRecord } from '../src/types'
 import { generateQuestionByType } from '../src/utils'
-import { buildReadingGenerationProfile, createReadingQuestionSet } from '../src/reading'
+import { buildReadingGenerationProfile, createReadingQuestionSet, createReadingQuestionSetAsync } from '../src/reading'
 import { readSavedSession, setupTestApp, writeSession } from './helpers'
 
 let cleanupCurrent: (() => Promise<void>) | null = null
@@ -388,6 +388,33 @@ describe('APLC backend', () => {
     expect(firstStory[0]?.content).not.toBe(secondStory[0]?.content)
     expect(firstStory[6]?.title).not.toBe(secondStory[6]?.title)
     expect(firstStory[6]?.quizItems?.[0]?.prompt).not.toBe(secondStory[6]?.quizItems?.[0]?.prompt)
+  })
+
+  test('reading question generation falls back locally when OpenAI is unavailable outside test mode', async () => {
+    const originalNodeEnv = process.env.NODE_ENV
+    const originalApiKey = process.env.OPENAI_API_KEY
+
+    process.env.NODE_ENV = 'production'
+    delete process.env.OPENAI_API_KEY
+
+    try {
+      const questions = await createReadingQuestionSetAsync('20260328-101500-Reading', {
+        challengeTier: 'stretch',
+        performanceSummary: 'Recent reading is steady.',
+        priorTitles: [],
+      })
+
+      expect(questions).toHaveLength(7)
+      expect(questions[0]?.kind).toBe('reading-page')
+      expect(questions[6]?.kind).toBe('reading-summary')
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey
+      }
+    }
   })
 
   test('raises reading generation challenge when recent reading is both fast and accurate', () => {
