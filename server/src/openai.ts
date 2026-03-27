@@ -2,6 +2,9 @@ import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, Rea
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
+const DEFAULT_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 15000))
+const READING_REQUEST_MAX_TOKENS = 2600
+const READING_REQUEST_TEMPERATURE = 0.8
 
 const callStats: OpenAICallStat[] = []
 
@@ -27,17 +30,36 @@ async function chatCompletion(
   maxTokens: number,
   temperature: number,
   label: string = 'chat',
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<string> {
   const cfg = getOpenAIConfig()
   const startMs = Date.now()
-  const response = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body: JSON.stringify({ model: cfg.model, messages, max_tokens: maxTokens, temperature }),
-  })
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify({ model: cfg.model, messages, max_tokens: maxTokens, temperature }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    const latencyMs = Date.now() - startMs
+    if (controller.signal.aborted) {
+      const timeoutError = new Error(`OpenAI request timed out after ${timeoutMs}ms.`)
+      console.error(`[OpenAI:${label}] TIMEOUT (${latencyMs}ms)`)
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+
   const latencyMs = Date.now() - startMs
   if (!response.ok) {
     const body = await response.text()
@@ -341,6 +363,7 @@ export async function generateReadingStoryAI(input: {
   challengeTier: 'core' | 'stretch' | 'advanced'
   performanceSummary: string
   priorTitles: string[]
+  timeoutMs?: number
 }): Promise<GeneratedReadingStory> {
   const challengeNotes = {
     core: 'Use strong Grade 7 IB middle-school readability, clear plot movement, emotionally vivid scenes, and mostly direct inference.',
@@ -354,24 +377,9 @@ export async function generateReadingStoryAI(input: {
         role: 'system',
         content: `You are an expert middle-grade fiction writer and reading-assessment designer creating ORIGINAL reading passages for one child learner.
 
-Write fresh, high-quality fiction for an 11-13 year old reader. Capture qualities often admired in excellent middle-grade books: atmosphere, discovery, moral courage, resourcefulness, emotional sincerity, vivid setting, narrative momentum, and thoughtful themes.
-
-As a quality benchmark only, aim for the level of craft, seriousness, readability, and imaginative or intellectual richness that readers often value in books such as:
-- The Hobbit
-- The Golden Compass
-- The Mysterious Benedict Society
-- Artemis Fowl
-- Island of the Blue Dolphins
-- Roll of Thunder, Hear My Cry
-- The Witch of Blackbird Pond
-- Where the Mountain Meets the Moon
-- Bomb: The Race to Build—and Steal—the World's Most Dangerous Weapon
-- I Am Malala
-
-Use those titles only as a grounding reference for quality, depth, atmosphere, curiosity, courage, and age-appropriate sophistication. Blend the broad strengths of multiple references instead of drifting toward any one book's voice or setup.
+Write fresh, high-quality fiction for an 11-13 year old reader with atmosphere, discovery, moral courage, resourcefulness, emotional sincerity, vivid setting, narrative momentum, and thoughtful themes.
 
 Do NOT imitate, paraphrase, reference, echo, or mention any specific real book, author, series, plot, or copyrighted character. Invent everything from scratch in your own wording.
-Do NOT produce "fan fiction," near-matches, homage plots, or prose that feels recognizably tied to any one listed work. Blend the broad literary qualities, not the copyrighted expression.
 
 Return ONLY a JSON object with this exact shape:
 {
@@ -434,9 +442,10 @@ Avoid reusing or resembling these earlier titles: ${input.priorTitles.length > 0
 Generate a fresh original reading story now.`,
       },
     ],
-    3200,
-    0.95,
+    READING_REQUEST_MAX_TOKENS,
+    READING_REQUEST_TEMPERATURE,
     'reading-story',
+    input.timeoutMs,
   )
 
   return parseReadingStoryFromContent(content)

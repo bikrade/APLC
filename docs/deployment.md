@@ -70,6 +70,7 @@ AUTH_ALLOWED_EMAIL=adi@gmail.com
 AUTH_SESSION_SECRET=replace-with-a-long-random-secret
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
+READING_AI_TIMEOUT_MS=8000
 ```
 
 ### Optional variables
@@ -78,6 +79,7 @@ OPENAI_MODEL=gpt-4o-mini
 CORS_ALLOWED_ORIGINS=https://example.com,https://other.com
 NGROK_DOMAIN=your-fixed-subdomain.ngrok-free.app
 DATA_ROOT=/app/data
+READING_AI_TIMEOUT_MS=8000
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_DEPLOYMENT=

@@ -11,6 +11,12 @@
     "acrName": {
       "value": "aplcregistry2026"
     },
+    "acrUsername": {
+      "value": "replace-with-acr-username"
+    },
+    "acrPassword": {
+      "value": "replace-with-acr-password"
+    },
     "logAnalyticsName": {
       "value": "aplc-logs"
     },
@@ -18,7 +24,34 @@
       "value": "aplc-insights"
     },
     "containerAppsEnvironmentName": {
-      "value": "aplc-env"
+      "value": "aplc-env-vnet"
+    },
+    "deployContainerApp": {
+      "value": true
+    },
+    "vnetName": {
+      "value": "aplc-vnet"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.42.0.0/22"
+    },
+    "acaInfrastructureSubnetName": {
+      "value": "aca-infra"
+    },
+    "acaInfrastructureSubnetPrefix": {
+      "value": "10.42.0.0/23"
+    },
+    "privateEndpointSubnetName": {
+      "value": "private-endpoints"
+    },
+    "privateEndpointSubnetPrefix": {
+      "value": "10.42.2.0/27"
+    },
+    "privateDnsZoneName": {
+      "value": "privatelink.blob.core.windows.net"
+    },
+    "acaDockerBridgeCidr": {
+      "value": "172.16.0.1/28"
     },
     "storageAccountName": {
       "value": "aplcfiles2026"
@@ -33,7 +66,7 @@
       "value": "aplcregistry2026.azurecr.io/aplc:latest"
     },
     "corsAllowedOrigins": {
-      "value": "https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io"
+      "value": ""
     },
     "openAiModel": {
       "value": "gpt-4o-mini"

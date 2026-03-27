@@ -135,6 +135,12 @@ jobs:
               "auth-email=${{ secrets.AUTH_ALLOWED_EMAIL }}" \
               "session-secret=${{ secrets.AUTH_SESSION_SECRET }}"
 
+      - name: Capture current Container App FQDN
+        id: app_fqdn
+        run: |
+          FQDN=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv)
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
@@ -151,7 +157,7 @@ jobs:
               "AZURE_STORAGE_ACCOUNT=aplcfiles2026" \
               "AZURE_STORAGE_CONTAINER=userdata" \
               "APPLICATIONINSIGHTS_CONNECTION_STRING=${{ secrets.APPINSIGHTS_CONNECTION_STRING }}" \
-              "CORS_ALLOWED_ORIGINS=https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io"
+              "CORS_ALLOWED_ORIGINS=https://${{ steps.app_fqdn.outputs.fqdn }}"
 
       - name: Verify deployment health
         run: |

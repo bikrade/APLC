@@ -464,6 +464,52 @@ describe('APLC backend', () => {
     }
   })
 
+  test('reading question generation falls back locally when AI story generation times out', async () => {
+    const originalApiKey = process.env.OPENAI_API_KEY
+    const originalTimeout = process.env.READING_AI_TIMEOUT_MS
+
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.READING_AI_TIMEOUT_MS = '5'
+
+    vi.resetModules()
+    vi.doMock('../src/openai', () => ({
+      isOpenAIConfigured: () => true,
+      generateReadingStoryAI: ({ timeoutMs }: { timeoutMs?: number }) =>
+        new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`OpenAI request timed out after ${timeoutMs ?? 5}ms.`))
+          }, timeoutMs ?? 5)
+        }),
+    }))
+
+    try {
+      const readingModule = await import('../src/reading')
+      const questions = await readingModule.createReadingQuestionSetAsync('20260328-101501-Reading', {
+        challengeTier: 'core',
+        performanceSummary: 'Recent reading is steady.',
+        priorTitles: [],
+      })
+
+      expect(questions).toHaveLength(7)
+      expect(questions[0]?.kind).toBe('reading-page')
+      expect(questions[0]?.title).toBeTruthy()
+      expect(questions[6]?.kind).toBe('reading-summary')
+    } finally {
+      vi.doUnmock('../src/openai')
+      vi.resetModules()
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey
+      }
+      if (originalTimeout === undefined) {
+        delete process.env.READING_AI_TIMEOUT_MS
+      } else {
+        process.env.READING_AI_TIMEOUT_MS = originalTimeout
+      }
+    }
+  })
+
   test('raises reading generation challenge when recent reading is both fast and accurate', () => {
     const makeReadingSession = (id: string, startedAt: string, readingScore: number, comprehensionScore: number, readingWpm: number): SessionRecord => ({
       id,

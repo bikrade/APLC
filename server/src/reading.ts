@@ -9,6 +9,7 @@ const READING_WARNING_THRESHOLD_WPM = 180
 const READING_PAGE_COUNT = 6
 const READING_PAGE_WORD_MIN = 200
 const READING_PAGE_WORD_MAX = 250
+const READING_AI_TIMEOUT_MS = Math.max(1000, Number(process.env.READING_AI_TIMEOUT_MS || 8000))
 
 type StoryBlueprint = {
   place: string
@@ -597,6 +598,7 @@ export async function createReadingQuestionSetAsync(
         challengeTier: options?.challengeTier ?? 'core',
         performanceSummary: options?.performanceSummary ?? 'Write an engaging original middle-grade story with strong clarity and emotional depth.',
         priorTitles: options?.priorTitles ?? [],
+        timeoutMs: READING_AI_TIMEOUT_MS,
       })
       return toQuestionSet(story)
     } catch (error) {
