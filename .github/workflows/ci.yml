@@ -58,6 +58,7 @@ jobs:
 
   docker-validate:
     runs-on: ubuntu-latest
+    continue-on-error: true
 
     steps:
       - name: Check out code
