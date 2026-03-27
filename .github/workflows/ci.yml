@@ -76,8 +76,7 @@ jobs:
           file: ./Dockerfile
           push: false
           tags: aplc-ci:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # With the `docker` driver, the GitHub Actions cache backend is unavailable.
 
   deploy:
     needs:

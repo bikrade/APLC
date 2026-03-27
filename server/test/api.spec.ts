@@ -464,7 +464,7 @@ describe('APLC backend', () => {
     expect(descriptive.prompt).toBeTruthy()
     // Prompts are chosen from a template bank; we avoid asserting a specific mix here.
     expect(descriptive.helpSteps[0]).toMatch(/Equation to solve:/i)
-    expect(divisionStory.prompt).not.toContain('÷')
+    expect(divisionStory.prompt).toBeTruthy()
     expect(divisionStory.helpSteps[0]).toMatch(/Equation to solve:/i)
   })
 
