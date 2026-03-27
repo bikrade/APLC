@@ -10,7 +10,7 @@
 - Home view also includes daily-practice progress bars that compare today and yesterday against a profile-driven target from the learner profile.
 - Math sessions now show adaptive-difficulty popups when the system gently raises or lowers challenge level.
 - Each subject card exposes two launch modes: `Guided` for live correctness feedback and `Quiz` for quieter, end-of-session review.
-- Reading sessions can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
+- Reading sessions run as a 6-page story, surface targeted vocabulary prompts during the passage, and can dynamically switch from written summary to a multiple-choice comprehension check for very fast readers.
 - Reading page views can surface short checkpoint prompts, and summary views now include a compact celebrate / grow next / tomorrow coaching strip.
 
 ## Backend
@@ -77,7 +77,7 @@
 - Both correct and incorrect answer flows pause for student acknowledgement ("Continue" or "Next Question" button) instead of auto-advancing.
 - Quiz-mode math flow records correctness, hints, reveals, and timing exactly like Guided mode, but suppresses instant correctness banners after answer entry and defers the question review to the summary screen.
 - Adaptive challenge UX: when Adi is consistently fast, correct, and independent, the next math questions step up; when he struggles, the next math questions soften with supportive messaging.
-- Reading UX: `130 WPM` is the target pace, speed score is based on the percentage of that benchmark, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
+- Reading UX: `130 WPM` is the target pace, speed score is based on the percentage of that benchmark, vocabulary prompts target strong Grade 7 IB-level words in context, and very fast reading can trigger a warning plus a comprehension quiz instead of free-text summary.
 - Landing page UX: progress insights banner plus coaching panels help convert raw performance data into specific next steps without making the dashboard feel like an admin console.
 - Parent review UX: the same landing page exposes celebration, watchlist, and support-move notes so adults can quickly understand what to reinforce.
 - CSS animations: slideUp, popIn, celebBounce, fadeInOut, pulse, shake.
@@ -97,7 +97,7 @@
 
 - **Multiplication**: Decimal, fraction, percentage, and mixed question types. Rule-based generation with adaptive numeric complexity levels from 1-7, faster step-up behavior for sustained strong performance, and broad prompt template variety.
 - **Division**: Decimal, fraction, percentage, and mixed question types with division-specific help steps, adaptive numeric complexity levels from 1-5, and broad prompt template variety.
-- **Reading**: Story-based reading comprehension with fresh session stories, corrected pace scoring, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Overall score ≥ 7 to pass.
+- **Reading**: Story-based reading comprehension with fresh OpenAI-generated stories repaginated into 6 pages, contextual vocabulary focus words, free-text summary for normal pace, and a multiple-choice comprehension check for very fast reading sessions (`190+ WPM`). Summary-mode reading now tracks comprehension, speed, and vocabulary use/explanation. Overall score ≥ 7 to pass.
 - `buildLearningCoach()` in `server/src/index.ts` derives lightweight coaching structures from completed sessions only: best-next-step guidance, habit signals, subject mastery stages, parent review notes, and supporting revisit metadata.
 
 ## Security

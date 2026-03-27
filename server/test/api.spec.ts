@@ -209,12 +209,12 @@ describe('APLC backend', () => {
     const sessionId = start.body.sessionId as string
 
     expect(start.status).toBe(200)
-    expect(start.body.questionCount).toBe(6)
+    expect(start.body.questionCount).toBe(7)
     expect(start.body.questions[0].kind).toBe('reading-page')
     expect(start.body.questions[1].kind).toBe('reading-page')
-    expect(start.body.questions[5].kind).toBe('reading-summary')
+    expect(start.body.questions[6].kind).toBe('reading-summary')
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       const pageResponse = await request(ctx.app)
         .post(`/session/adi/${sessionId}/answer`)
         .send({ questionIndex: index, elapsedMs: 180000, answer: '' })
@@ -226,16 +226,20 @@ describe('APLC backend', () => {
     const summary = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)
       .send({
-        questionIndex: 5,
+        questionIndex: 6,
         elapsedMs: 45000,
-        answer: 'Mira and Dev restore the Monsoon Clock, use notebooks and tide patterns to warn the town, and help prevent the market from flooding because the community learns to observe and work together again.',
+        answer: 'Mira and Dev restore the Monsoon Clock, study notebooks and tide patterns, and use evidence from the town records to prove the warning is trustworthy. Their work helps protect the vulnerable market before the storm, showing that evidence and teamwork help a community act early.',
       })
 
     expect(summary.status).toBe(200)
     expect(summary.body.status).toBe('completed')
-    expect(summary.body.answers[5].readingScore).toBeGreaterThanOrEqual(0)
-    expect(summary.body.answers[5].readingWpm).toBeGreaterThan(0)
+    expect(summary.body.answers[6].readingScore).toBeGreaterThanOrEqual(0)
+    expect(summary.body.answers[6].readingWpm).toBeGreaterThan(0)
+    expect(summary.body.answers[6].vocabularyScore).toBeGreaterThan(0)
+    expect(summary.body.answers[6].vocabularyTermsUsed).toBeGreaterThanOrEqual(1)
+    expect(summary.body.answers[6].vocabularyTermsExplained).toBeGreaterThanOrEqual(1)
     expect(summary.body.explanation).toContain('Overall reading score')
+    expect(summary.body.explanation).toContain('Vocabulary use was')
 
     const inProgress = await request(ctx.app).get('/sessions/in-progress/adi')
     expect(inProgress.status).toBe(200)
@@ -252,9 +256,9 @@ describe('APLC backend', () => {
     })
     const sessionId = start.body.sessionId as string
     const savedSession = await readSavedSession(ctx.dataRoot, sessionId)
-    const quizAnswers = savedSession.questions[5]?.quizItems?.map((item) => item.correctOption) ?? []
+    const quizAnswers = savedSession.questions[6]?.quizItems?.map((item) => item.correctOption) ?? []
 
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       const pageResponse = await request(ctx.app)
         .post(`/session/adi/${sessionId}/answer`)
         .send({ questionIndex: index, elapsedMs: 20000, answer: '' })
@@ -264,24 +268,25 @@ describe('APLC backend', () => {
 
     const transitionResponse = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)
-      .send({ questionIndex: 4, elapsedMs: 20000, answer: '' })
+      .send({ questionIndex: 5, elapsedMs: 20000, answer: '' })
 
     expect(transitionResponse.status).toBe(200)
-    expect(transitionResponse.body.questions[5].kind).toBe('reading-quiz')
+    expect(transitionResponse.body.questions[6].kind).toBe('reading-quiz')
     expect(transitionResponse.body.adaptiveNotification?.kind).toBe('reading-warning')
 
     const quiz = await request(ctx.app)
       .post(`/session/adi/${sessionId}/answer`)
       .send({
-        questionIndex: 5,
+        questionIndex: 6,
         elapsedMs: 25000,
         readingQuizAnswers: quizAnswers,
       })
 
     expect(quiz.status).toBe(200)
     expect(quiz.body.status).toBe('completed')
-    expect(quiz.body.answers[5].readingWpm).toBeGreaterThanOrEqual(190)
-    expect(quiz.body.answers[5].comprehensionScore).toBe(10)
+    expect(quiz.body.answers[6].readingWpm).toBeGreaterThanOrEqual(190)
+    expect(quiz.body.answers[6].comprehensionScore).toBe(10)
+    expect(quiz.body.answers[6]).not.toHaveProperty('vocabularyScore')
     expect(quiz.body.explanation).toContain('quiz questions correct')
   })
 
@@ -381,8 +386,8 @@ describe('APLC backend', () => {
     const secondStory = createReadingQuestionSet('20260322-120001-Reading')
 
     expect(firstStory[0]?.content).not.toBe(secondStory[0]?.content)
-    expect(firstStory[5]?.title).not.toBe(secondStory[5]?.title)
-    expect(firstStory[5]?.quizItems?.[0]?.prompt).not.toBe(secondStory[5]?.quizItems?.[0]?.prompt)
+    expect(firstStory[6]?.title).not.toBe(secondStory[6]?.title)
+    expect(firstStory[6]?.quizItems?.[0]?.prompt).not.toBe(secondStory[6]?.quizItems?.[0]?.prompt)
   })
 
   test('raises reading generation challenge when recent reading is both fast and accurate', () => {
@@ -901,6 +906,129 @@ describe('APLC backend', () => {
     expect(multiplication.overallStage).not.toBe('mastered')
     expect(reading.skills).toHaveLength(3)
     expect(reading.skills.some((skill: { label: string }) => skill.label === 'Pace Control')).toBe(true)
+  })
+
+  test('dashboard parent review tracks recent sessions instead of old history', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const now = new Date()
+    const isoDaysAgo = (daysAgo: number) => {
+      const date = new Date(now)
+      date.setUTCDate(date.getUTCDate() - daysAgo)
+      date.setUTCHours(9, 0, 0, 0)
+      return date.toISOString()
+    }
+
+    const makeMathSession = (
+      id: string,
+      startedAt: string,
+      subject: 'Multiplication' | 'Division',
+      answers: Array<{ correct: boolean; elapsedMs: number; usedReveal?: boolean; type: 'decimal' | 'fraction' | 'percentage' | 'mixed' }>,
+    ): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject,
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: answers.length,
+      questions: answers.map((answer, index) => ({
+        id: `${id}-q-${index}`,
+        prompt: `Question ${index + 1}`,
+        type: answer.type,
+        kind: 'math',
+        answer: 1,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      })),
+      answers: answers.map((answer, index) => ({
+        questionId: `${id}-q-${index}`,
+        questionIndex: index,
+        completed: true,
+        usedHelp: false,
+        usedReveal: answer.usedReveal ?? false,
+        elapsedMs: answer.elapsedMs,
+        isCorrect: answer.correct,
+        attemptCount: answer.correct ? 1 : 2,
+        firstAttemptCorrect: answer.correct,
+      })),
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260310-090000-Division',
+      isoDaysAgo(18),
+      'Division',
+      [
+        { correct: false, elapsedMs: 190000, usedReveal: true, type: 'fraction' },
+        { correct: false, elapsedMs: 210000, usedReveal: true, type: 'fraction' },
+        { correct: true, elapsedMs: 180000, usedReveal: true, type: 'percentage' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260312-090000-Division',
+      isoDaysAgo(16),
+      'Division',
+      [
+        { correct: false, elapsedMs: 195000, usedReveal: true, type: 'fraction' },
+        { correct: true, elapsedMs: 175000, usedReveal: true, type: 'percentage' },
+        { correct: false, elapsedMs: 205000, usedReveal: true, type: 'mixed' },
+      ],
+    ))
+
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260327-090000-Multiplication',
+      isoDaysAgo(1),
+      'Multiplication',
+      [
+        { correct: true, elapsedMs: 62000, type: 'decimal' },
+        { correct: true, elapsedMs: 64000, type: 'fraction' },
+        { correct: true, elapsedMs: 60000, type: 'percentage' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260326-090000-Division',
+      isoDaysAgo(2),
+      'Division',
+      [
+        { correct: true, elapsedMs: 70000, type: 'fraction' },
+        { correct: true, elapsedMs: 72000, type: 'percentage' },
+        { correct: true, elapsedMs: 76000, type: 'mixed' },
+      ],
+    ))
+    await writeSession(ctx.dataRoot, makeMathSession(
+      '20260325-090000-Division',
+      isoDaysAgo(3),
+      'Division',
+      [
+        { correct: true, elapsedMs: 78000, type: 'fraction' },
+        { correct: true, elapsedMs: 74000, type: 'percentage' },
+        { correct: true, elapsedMs: 69000, type: 'mixed' },
+      ],
+    ))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.learningCoach.habitSignals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'First-Try Success', value: '100%', tone: 'strong' }),
+      expect.objectContaining({ label: 'Independence', value: '100%', tone: 'strong' }),
+      expect.objectContaining({ label: 'Working Pace', tone: 'strong' }),
+    ]))
+    expect(res.body.learningCoach.weeklyMission.items).toContainEqual(expect.objectContaining({
+      id: 'independence',
+      detail: expect.stringContaining('this week is 0%'),
+      status: 'done',
+    }))
+    expect(res.body.learningCoach.parentReview.celebration).toEqual(expect.arrayContaining([
+      expect.stringContaining('First-try success is strong this week'),
+      expect.stringContaining('Reveal usage is low this week'),
+    ]))
+    expect(res.body.learningCoach.parentReview.watchlist.length).toBeGreaterThan(0)
+    expect(res.body.learningCoach.parentReview.watchlist[0]).toContain('this week')
   })
 
   test('insights returns enriched overall and per-subject guidance', async () => {

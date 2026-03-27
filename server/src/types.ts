@@ -10,6 +10,12 @@ export interface ReadingQuizItem {
   correctOption: number
 }
 
+export interface ReadingVocabularyItem {
+  term: string
+  studentFriendlyMeaning: string
+  contextClue: string
+}
+
 export interface GeneratedReadingStory {
   title: string
   pages: string[]
@@ -17,6 +23,7 @@ export interface GeneratedReadingStory {
   summaryGuidance: string
   keywordGroups: string[][]
   quizItems: ReadingQuizItem[]
+  vocabularyFocus: ReadingVocabularyItem[]
 }
 
 export interface Question {
@@ -30,6 +37,7 @@ export interface Question {
   wordCount?: number
   quizItems?: ReadingQuizItem[]
   readingKeywordGroups?: string[][]
+  vocabularyFocus?: ReadingVocabularyItem[]
   answer: number
   tolerance: number
   helpSteps: string[]
@@ -56,6 +64,9 @@ export interface QuestionState {
   comprehensionScore?: number
   speedScore?: number
   readingWpm?: number
+  vocabularyScore?: number
+  vocabularyTermsUsed?: number
+  vocabularyTermsExplained?: number
 }
 
 export interface SessionRecord {

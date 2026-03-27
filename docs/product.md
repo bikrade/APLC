@@ -78,7 +78,8 @@ Difficulty progression should never swing too quickly. The app should wait for a
 One gradual way to raise challenge in multiplication and division is to keep the same underlying math structure while sometimes presenting it as a short real-world word problem instead of a plain numeric expression. The app should maintain a mix of direct computation and brief situational prompts so Adi practices both calculation fluency and problem interpretation.
 Math prompt generation should use a broad template bank for each math question type and avoid repeating recently used templates, targeting roughly a 1-in-30 repeat probability in normal session flow.
 Template and adaptive-difficulty upgrades should apply to in-progress sessions as soon as the next unanswered question is generated, without requiring session completion.
-Reading sessions should generate a fresh story for each new session while keeping the passage internally coherent across all pages, the summary guidance, and the comprehension quiz. The goal is to preserve novelty without sacrificing fair comprehension scoring.
+Reading sessions should generate a fresh story for each new session while keeping the passage internally coherent across all pages, the summary guidance, the vocabulary targets, and the comprehension quiz. The goal is to preserve novelty without sacrificing fair comprehension scoring.
+Reading vocabulary should feel appropriate for a strong Grade 7 IB middle-school learner: precise, transferable, and inferable from context rather than obscure.
 Allow him to pause & resume clock on any problem
 optimal number of questions per session to be decided by the App & AI to allow Adi to finish in 30 min broadly 
 Hints should be dynamically generated, only when help is asked
@@ -89,6 +90,7 @@ For reading, treat `130 WPM` as the target pace, score speed by the percentage o
 The home experience should include a visible best next step, subject mastery states, detailed insight guidance, and a compact parent review section on the same landing page
 The home experience should also show a simple, motivating daily-practice progress bar for yesterday and today so Adi can build a profile-driven daily habit
 The app should surface light in-flow reading coaching prompts and a short session-end coach summary so each session closes with celebration, reflection, and a next step
+The reading summary should track not only pace and comprehension, but also how often Adi uses or explains the target vocabulary words from the passage
 
 ## Non-functional Requirements
 The UI should be clean, simple, and child-friendly with minimal distractions

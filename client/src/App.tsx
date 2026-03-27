@@ -178,6 +178,12 @@ type ReadingQuizItem = {
   options: string[]
 }
 
+type ReadingVocabularyItem = {
+  term: string
+  studentFriendlyMeaning: string
+  contextClue: string
+}
+
 type Question = {
   id: string
   prompt: string
@@ -187,6 +193,7 @@ type Question = {
   content?: string
   wordCount?: number
   quizItems?: ReadingQuizItem[]
+  vocabularyFocus?: ReadingVocabularyItem[]
   index: number
 }
 
@@ -207,6 +214,9 @@ type AnswerState = {
   comprehensionScore?: number
   speedScore?: number
   readingWpm?: number
+  vocabularyScore?: number
+  vocabularyTermsUsed?: number
+  vocabularyTermsExplained?: number
 }
 
 type StartSessionResponse = {
@@ -441,6 +451,7 @@ function getSessionCoachSummary(
     overallScore: number
     comprehensionScore: number
     speedScore: number
+    vocabularyScore?: number
     assessmentMode: 'summary' | 'quiz'
   },
 ): { celebration: string; growthNote: string; nextStep: string } {
@@ -465,12 +476,16 @@ function getSessionCoachSummary(
     }
     return {
       celebration: 'You completed the story thoughtfully and gave the app a real signal to coach from.',
-      growthNote: readingSummary.averageWpm < 130
+      growthNote: readingSummary.vocabularyScore !== undefined && readingSummary.vocabularyScore < 6
+        ? `Your vocabulary use score was ${readingSummary.vocabularyScore}/10, so the next jump is using one or two of the story words accurately when you explain the ending.`
+        : readingSummary.averageWpm < 130
         ? `Your speed score is ${readingSummary.speedScore}/10 because speed is measured against a 130 WPM target. ${readingSummary.averageWpm} WPM is a solid start, and now the goal is to raise it without losing meaning.`
         : 'Your reading is developing, and the next step is making the pace and the understanding feel equally steady.',
       nextStep: readingSummary.averageWpm < 130
         ? 'On the next session, keep your eyes moving line by line, avoid long pauses, and aim for a smoother pace toward 130 WPM.'
-        : 'On the next session, aim for calm pace and one strong summary that names the problem, the turning point, and the outcome.',
+        : readingSummary.vocabularyScore !== undefined && readingSummary.vocabularyScore < 6
+          ? 'On the next session, choose one vocabulary word from the story and use it clearly when you explain the problem or ending.'
+          : 'On the next session, aim for calm pace and one strong summary that names the problem, the turning point, and the outcome.',
     }
   }
 
@@ -1638,6 +1653,9 @@ function App() {
       overallScore: finalAnswer?.readingScore ?? 0,
       comprehensionScore: finalAnswer?.comprehensionScore ?? 0,
       speedScore: finalAnswer?.speedScore ?? 0,
+      vocabularyScore: finalAnswer?.vocabularyScore,
+      vocabularyTermsUsed: finalAnswer?.vocabularyTermsUsed ?? 0,
+      vocabularyTermsExplained: finalAnswer?.vocabularyTermsExplained ?? 0,
       assessmentMode,
       warning: averageWpm >= 180
         ? 'This pace was extremely fast for the passage. Next time, slow down enough to really absorb the meaning.'
@@ -2351,6 +2369,18 @@ function App() {
                 <div className="reading-page-content">
                   {currentQuestion.content}
                 </div>
+                {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
+                  <div className="reading-vocabulary-card">
+                    <p className="reading-vocabulary-kicker">Word To Notice</p>
+                    {currentQuestion.vocabularyFocus.map((item) => (
+                      <div key={item.term} className="reading-vocabulary-item compact">
+                        <p className="reading-vocabulary-term">{item.term}</p>
+                        <p className="reading-vocabulary-meaning">{item.studentFriendlyMeaning}</p>
+                        <p className="reading-vocabulary-clue">{item.contextClue}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {readingCheckpoint && isCurrentQuestion && (
                   <div className="reading-coach-card">
                     <p className="reading-coach-kicker">{readingCheckpoint.title}</p>
@@ -2371,6 +2401,21 @@ function App() {
                 {currentQuestion.content && (
                   <div className="reading-summary-guidance">{currentQuestion.content}</div>
                 )}
+                {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
+                  <div className="reading-vocabulary-card summary">
+                    <p className="reading-vocabulary-kicker">Vocabulary Builder</p>
+                    <p className="reading-vocabulary-intro">Try to use one of these words correctly in your summary or say its meaning aloud before you submit.</p>
+                    <div className="reading-vocabulary-list">
+                      {currentQuestion.vocabularyFocus.map((item) => (
+                        <div key={item.term} className="reading-vocabulary-item">
+                          <p className="reading-vocabulary-term">{item.term}</p>
+                          <p className="reading-vocabulary-meaning">{item.studentFriendlyMeaning}</p>
+                          <p className="reading-vocabulary-clue">{item.contextClue}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2385,6 +2430,21 @@ function App() {
                 </div>
                 {currentQuestion.content && (
                   <div className="reading-warning-panel">{currentQuestion.content}</div>
+                )}
+                {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
+                  <div className="reading-vocabulary-card summary">
+                    <p className="reading-vocabulary-kicker">Vocabulary Builder</p>
+                    <p className="reading-vocabulary-intro">Before you submit, pick one word and explain its meaning from context in your own words.</p>
+                    <div className="reading-vocabulary-list">
+                      {currentQuestion.vocabularyFocus.map((item) => (
+                        <div key={item.term} className="reading-vocabulary-item">
+                          <p className="reading-vocabulary-term">{item.term}</p>
+                          <p className="reading-vocabulary-meaning">{item.studentFriendlyMeaning}</p>
+                          <p className="reading-vocabulary-clue">{item.contextClue}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 <div className="reading-quiz-list">
                   {currentQuestion.quizItems?.map((item, itemIndex) => (
@@ -2648,12 +2708,20 @@ function App() {
               <div className="summary-stat-value">{readingSummary.overallScore}/10</div>
               <div className="summary-stat-label">Overall Reading</div>
             </div>
+            <div className="summary-stat-card">
+              <span className="summary-stat-icon">🗣️</span>
+              <div className="summary-stat-value">{readingSummary.vocabularyScore !== undefined ? `${readingSummary.vocabularyScore}/10` : 'N/A'}</div>
+              <div className="summary-stat-label">Vocabulary Use</div>
+            </div>
           </div>
 
           <div className="reading-summary-note">
             You read about {readingSummary.totalWords.toLocaleString()} words across {readingSummary.pagesRead} pages.
             {' '}Target reading pace is 130 WPM, and speed score is based on how close you were to that target.
             {readingSummary.assessmentMode === 'quiz' && ' Because the pace was high, the final check switched to multiple choice.'}
+            {readingSummary.vocabularyScore !== undefined
+              ? ` Vocabulary use scored ${readingSummary.vocabularyScore}/10, with ${readingSummary.vocabularyTermsUsed} target words used and ${readingSummary.vocabularyTermsExplained} explained clearly.`
+              : ' Vocabulary use was not scored in this session because the final check switched to quiz mode.'}
             {readingSummary.warning && ` ${readingSummary.warning}`}
           </div>
 

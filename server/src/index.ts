@@ -427,6 +427,11 @@ function toClientQuestion(question: SessionRecord['questions'][number], index: n
       prompt: item.prompt,
       options: item.options,
     })),
+    vocabularyFocus: question.vocabularyFocus?.map((item) => ({
+      term: item.term,
+      studentFriendlyMeaning: item.studentFriendlyMeaning,
+      contextClue: item.contextClue,
+    })),
     index,
   }
 }
@@ -722,6 +727,8 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
 
   const completedThisWeek = completedSessions.filter((session) => new Date(session.completedAt ?? session.startedAt).getTime() >= weekStart.getTime())
   const completedThisWeekBySubject = Object.fromEntries(subjects.map((subject) => [subject, completedThisWeek.filter((session) => session.subject === subject).length])) as Record<Subject, number>
+  const reviewWindowSessions = completedThisWeek.length > 0 ? completedThisWeek : completedSessions.slice(0, 4)
+  const reviewWindowLabel = completedThisWeek.length > 0 ? 'this week' : 'recent sessions'
 
   const masteryBySubject: MasterySubject[] = subjects.map((subject) => {
     const subjectSessions = completedSessions.filter((session) => session.subject === subject)
@@ -866,14 +873,14 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
     return rank[a.overallStage] - rank[b.overallStage]
   })[0]?.subject ?? 'Multiplication'
 
-  const revealAnswers = completedSessions.flatMap((session) => session.answers.filter((answer) => answer.completed && answer.usedReveal))
-  const totalCompletedAnswers = completedSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
-  const revealRate = totalCompletedAnswers.length > 0 ? Math.round((revealAnswers.length / totalCompletedAnswers.length) * 100) : 0
-  const firstAttemptRate = totalCompletedAnswers.length > 0
-    ? Math.round((totalCompletedAnswers.filter((answer) => answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal)).length / totalCompletedAnswers.length) * 100)
+  const reviewRevealAnswers = reviewWindowSessions.flatMap((session) => session.answers.filter((answer) => answer.completed && answer.usedReveal))
+  const reviewCompletedAnswers = reviewWindowSessions.flatMap((session) => session.answers.filter((answer) => answer.completed))
+  const revealRate = reviewCompletedAnswers.length > 0 ? Math.round((reviewRevealAnswers.length / reviewCompletedAnswers.length) * 100) : 0
+  const firstAttemptRate = reviewCompletedAnswers.length > 0
+    ? Math.round((reviewCompletedAnswers.filter((answer) => answer.firstAttemptCorrect ?? (answer.isCorrect && (answer.attemptCount ?? 1) <= 1 && !answer.usedHelp && !answer.usedReveal)).length / reviewCompletedAnswers.length) * 100)
     : 0
-  const avgResponseSeconds = totalCompletedAnswers.length > 0
-    ? Math.round(totalCompletedAnswers.reduce((sum, answer) => sum + answer.elapsedMs, 0) / totalCompletedAnswers.length / 1000)
+  const avgResponseSeconds = reviewCompletedAnswers.length > 0
+    ? Math.round(reviewCompletedAnswers.reduce((sum, answer) => sum + answer.elapsedMs, 0) / reviewCompletedAnswers.length / 1000)
     : 0
 
   const weeklyMissionItems: WeeklyMissionItem[] = [
@@ -892,7 +899,7 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
     {
       id: 'independence',
       label: 'Use hints before reveals',
-      detail: `Current reveal rate is ${revealRate}%. The goal is calmer independence before showing the full answer.`,
+      detail: `Reveal rate ${reviewWindowLabel} is ${revealRate}%. The goal is calmer independence before showing the full answer.`,
       status: revealRate <= 10 ? 'done' : revealRate <= 20 ? 'in-progress' : 'up-next',
     },
   ]
@@ -935,11 +942,11 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
           ? 'Adi has enough completed work now for patterns to become meaningful and coachable.'
           : 'Adi is still early in the journey, but the app is starting to gather useful learning signals.',
       firstAttemptRate >= 75
-        ? 'First-try success is strong, which suggests growing confidence and better self-checking.'
-        : 'Adi is still learning to settle before submitting, which is normal and coachable.',
+        ? `First-try success is strong ${reviewWindowLabel}, which suggests growing confidence and better self-checking.`
+        : `Adi is still learning to settle before submitting ${reviewWindowLabel}, which is normal and coachable.`,
       revealRate <= 12
-        ? 'Reveal usage is low, showing that independence is growing.'
-        : 'Adi is still leaning on full reveals more than ideal, but that is a clear target we can improve.',
+        ? `Reveal usage is low ${reviewWindowLabel}, showing that independence is growing.`
+        : `Adi is still leaning on full reveals more than ideal ${reviewWindowLabel}, but that is a clear target we can improve.`,
     ].slice(0, 3),
     watchlist: [
       ...(revealRate > 20 ? [`Reveal usage is ${revealRate}%, which may mean frustration is rising before he fully tries the problem.`] : []),
@@ -957,6 +964,10 @@ function buildLearningCoach(allSessions: SessionRecord[]): LearningCoach {
         ? 'When he feels stuck, encourage Hint first and Show second so he still practices thinking.'
         : 'Keep sessions short and steady so the app stays associated with progress, not pressure.',
     ],
+  }
+
+  if (parentReview.watchlist.length === 0) {
+    parentReview.watchlist.push(`No major pressure signal is flashing ${reviewWindowLabel}, so the main watchpoint is keeping this calm consistency going.`)
   }
 
   return {
@@ -1613,7 +1624,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     sessionId: session.id,
     subject: session.subject,
     sessionMode: getSessionMode(session),
-    questionCount: questions.length,
+    questionCount: session.questions.length,
     questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
     answers,
     currentIndex: session.currentIndex,
@@ -1897,6 +1908,11 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     state.comprehensionScore = readingResult.comprehensionScore
     state.speedScore = readingResult.speedScore
     state.readingWpm = readingResult.averageWpm
+    if (readingResult.mode === 'summary') {
+      state.vocabularyScore = readingResult.vocabularyScore
+      state.vocabularyTermsUsed = readingResult.vocabularyTermsUsed
+      state.vocabularyTermsExplained = readingResult.vocabularyTermsExplained
+    }
     session.status = 'completed'
     session.completedAt = new Date().toISOString()
     session.lastActivityAt = session.completedAt

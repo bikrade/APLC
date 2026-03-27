@@ -1,4 +1,4 @@
-import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, ReadingQuizItem } from './types'
+import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, ReadingQuizItem, ReadingVocabularyItem } from './types'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -187,6 +187,24 @@ function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
       .map((group) => Array.isArray(group) ? group.map(String).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean) : [])
       .filter((group) => group.length > 0)
     : []
+  const vocabularyFocus = Array.isArray(item.vocabularyFocus)
+    ? item.vocabularyFocus
+      .map((entry): ReadingVocabularyItem | null => {
+        const candidate = entry as Record<string, unknown>
+        const term = String(candidate.term ?? '').trim()
+        const studentFriendlyMeaning = String(candidate.studentFriendlyMeaning ?? '').trim()
+        const contextClue = String(candidate.contextClue ?? '').trim()
+        if (!term || !studentFriendlyMeaning || !contextClue) {
+          return null
+        }
+        return {
+          term,
+          studentFriendlyMeaning,
+          contextClue,
+        }
+      })
+      .filter((entry): entry is ReadingVocabularyItem => entry !== null)
+    : []
   const quizItems = Array.isArray(item.quizItems)
     ? item.quizItems
       .map((quizItem, index): ReadingQuizItem | null => {
@@ -207,11 +225,14 @@ function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
       .filter((quizItem): quizItem is ReadingQuizItem => quizItem !== null)
     : []
 
+  const totalWords = pages.reduce((sum, page) => sum + countWords(page), 0)
+
   if (!title) throw new Error('OpenAI reading response is missing a title.')
-  if (pages.length !== 5) throw new Error(`OpenAI reading response must include 5 pages, received ${pages.length}.`)
-  if (pages.some((page) => countWords(page) < 120)) throw new Error('OpenAI reading response included a page that is too short.')
+  if (pages.length < 4 || pages.length > 8) throw new Error(`OpenAI reading response must include 4 to 8 story chunks, received ${pages.length}.`)
+  if (totalWords < 1000) throw new Error(`OpenAI reading response is too short for the target session length (${totalWords} words).`)
   if (!summaryGuidance) throw new Error('OpenAI reading response is missing summary guidance.')
   if (keywordGroups.length < 8) throw new Error('OpenAI reading response needs at least 8 keyword groups.')
+  if (vocabularyFocus.length < 4) throw new Error('OpenAI reading response needs at least 4 vocabulary focus items.')
   if (quizItems.length !== 4) throw new Error(`OpenAI reading response must include 4 quiz items, received ${quizItems.length}.`)
 
   return {
@@ -220,6 +241,7 @@ function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
     summaryPrompt,
     summaryGuidance,
     keywordGroups,
+    vocabularyFocus,
     quizItems,
   }
 }
@@ -313,9 +335,9 @@ export async function generateReadingStoryAI(input: {
   priorTitles: string[]
 }): Promise<GeneratedReadingStory> {
   const challengeNotes = {
-    core: 'Use strong Grade 6 / upper-middle-grade readability, clear plot movement, emotionally vivid scenes, and mostly direct inference.',
-    stretch: 'Raise the sophistication slightly with denser description, more layered motives, stronger inferential reading, and some richer vocabulary that remains clear in context.',
-    advanced: 'Write at the high end of middle-grade difficulty with deeper thematic texture, more nuanced emotional shifts, more subtext, and longer but still readable sentence structures.',
+    core: 'Use strong Grade 7 IB middle-school readability, clear plot movement, emotionally vivid scenes, and mostly direct inference.',
+    stretch: 'Raise the sophistication slightly with denser description, more layered motives, stronger inferential reading, and richer Grade 7 IB vocabulary that remains inferable from context.',
+    advanced: 'Write at the high end of Grade 7 IB middle-grade difficulty with deeper thematic texture, more nuanced emotional shifts, more subtext, and longer but still readable sentence structures.',
   }[input.challengeTier]
 
   const content = await chatCompletion(
@@ -338,7 +360,7 @@ As a quality benchmark only, aim for the level of craft, seriousness, readabilit
 - Bomb: The Race to Build—and Steal—the World's Most Dangerous Weapon
 - I Am Malala
 
-Use those titles only as a grounding reference for quality, depth, atmosphere, curiosity, courage, and age-appropriate sophistication.
+Use those titles only as a grounding reference for quality, depth, atmosphere, curiosity, courage, and age-appropriate sophistication. Blend the broad strengths of multiple references instead of drifting toward any one book's voice or setup.
 
 Do NOT imitate, paraphrase, reference, echo, or mention any specific real book, author, series, plot, or copyrighted character. Invent everything from scratch in your own wording.
 Do NOT produce "fan fiction," near-matches, homage plots, or prose that feels recognizably tied to any one listed work. Blend the broad literary qualities, not the copyrighted expression.
@@ -346,10 +368,16 @@ Do NOT produce "fan fiction," near-matches, homage plots, or prose that feels re
 Return ONLY a JSON object with this exact shape:
 {
   "title": "Fresh original title",
-  "pages": ["page 1", "page 2", "page 3", "page 4", "page 5"],
+  "pages": ["story chunk 1", "story chunk 2", "story chunk 3", "story chunk 4"],
   "summaryPrompt": "In about 100 words, explain the core summary of the story you just read.",
   "summaryGuidance": "Specific guidance for what the student should include.",
   "keywordGroups": [["keyword1", "keyword2"], ...],
+  "vocabularyFocus": [
+    { "term": "...", "studentFriendlyMeaning": "...", "contextClue": "..." },
+    { "term": "...", "studentFriendlyMeaning": "...", "contextClue": "..." },
+    { "term": "...", "studentFriendlyMeaning": "...", "contextClue": "..." },
+    { "term": "...", "studentFriendlyMeaning": "...", "contextClue": "..." }
+  ],
   "quizItems": [
     { "id": "reading-quiz-1", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 0 },
     { "id": "reading-quiz-2", "prompt": "...", "options": ["...", "...", "...", "..."], "correctOption": 1 },
@@ -359,8 +387,8 @@ Return ONLY a JSON object with this exact shape:
 }
 
 Story requirements:
-- Exactly 5 pages.
-- Each page should be roughly 150-240 words for core, 170-260 for stretch, or 190-290 for advanced.
+- The full story should be long enough for a serious 6-page reading session: roughly 1100-1450 words for core, 1250-1550 for stretch, or 1400-1700 for advanced.
+- Return the story in 4 to 8 natural chunks inside the pages array. Chunk lengths do not need to match. The app will repaginate the story into exactly 6 reading pages.
 - The title must be fresh and not resemble any prior title supplied by the user.
 - The protagonist should feel age-appropriate for upper elementary / middle school.
 - The story should have a clear central problem, rising tension, and a meaningful resolution.
@@ -368,10 +396,13 @@ Story requirements:
 - Avoid repetitive sentence openings and avoid formulaic chapter endings.
 - Make the summaryGuidance specific to the actual story.
 - Provide 8-12 keywordGroups, all lowercase, each group containing alternative terms/phrases that a student summary might mention.
+- Provide 4 vocabularyFocus items chosen from words or short phrases that genuinely appear in the story and can help a strong Grade 7 IB reader grow academic or literary vocabulary.
+- Each vocabularyFocus item must include a studentFriendlyMeaning and a contextClue that explains how the surrounding sentence helps reveal the meaning.
+- Choose words that are useful and transferable, not obscure decoration.
 - The 4 quizItems must check both literal understanding and inference, not just trivial recall.
 - Every quiz question must have exactly 4 plausible options with only one correct answer.
 - Build the reading like a strong teacher-made comprehension passage, not just a creative story. The text should support assessment of sequencing, cause and effect, character motivation, evidence-based inference, vocabulary in context, and theme.
-- Keep the reading load manageable for a Grade 6 learner: mostly clear syntax, purposeful paragraphing, and only a small number of richer vocabulary words that can be understood from context.
+- Keep the reading load manageable for a strong Grade 7 IB learner: mostly clear syntax, purposeful paragraphing, and only a small number of richer vocabulary words that can be understood from context.
 - Do not make comprehension depend on obscure vocabulary or cultural background knowledge.
 - Include enough concrete details that a student can cite or recall evidence from the text without guessing.
 - Spread comprehension demands across the 4 quizItems: include a mix of literal retrieval, inference, author's purpose or theme, and word-or-phrase-in-context where natural.
@@ -379,7 +410,7 @@ Story requirements:
 - Distractors should reflect believable student misunderstandings, such as mixing up timeline events, overgeneralizing a detail, or missing a motivation shift.
 - The summaryPrompt and summaryGuidance should push for the key summary structure a teacher would want: setting, main problem, important actions, and resolution, not tiny details.
 - Prefer emotionally coherent stories with one clear through-line over stories that are clever but confusing.
-- Make sure each page boundary feels natural and does not break the story in a confusing place.
+- Make sure each chunk boundary feels natural and does not break the story in a confusing place.
 
 Difficulty guidance:
 - ${challengeNotes}`,
