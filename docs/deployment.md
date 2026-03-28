@@ -52,6 +52,10 @@ PORT=3001
 OPENAI_MODEL=gpt-4o-mini
 DATA_ROOT=/app/data
 OPENAI_API_KEY=secretref:openai-key
+READING_AI_TIMEOUT_MS=25000
+READING_AI_RETRY_COUNT=2
+READING_AI_RETRY_BASE_DELAY_MS=1200
+READING_AI_RETRY_MAX_DELAY_MS=4000
 GOOGLE_CLIENT_ID=secretref:google-client-id
 AUTH_ALLOWED_EMAIL=secretref:auth-email
 AUTH_SESSION_SECRET=secretref:session-secret
@@ -70,7 +74,10 @@ AUTH_ALLOWED_EMAIL=adi@gmail.com
 AUTH_SESSION_SECRET=replace-with-a-long-random-secret
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
-READING_AI_TIMEOUT_MS=8000
+READING_AI_TIMEOUT_MS=25000
+READING_AI_RETRY_COUNT=2
+READING_AI_RETRY_BASE_DELAY_MS=1200
+READING_AI_RETRY_MAX_DELAY_MS=4000
 ```
 
 ### Optional variables
@@ -79,7 +86,10 @@ READING_AI_TIMEOUT_MS=8000
 CORS_ALLOWED_ORIGINS=https://example.com,https://other.com
 NGROK_DOMAIN=your-fixed-subdomain.ngrok-free.app
 DATA_ROOT=/app/data
-READING_AI_TIMEOUT_MS=8000
+READING_AI_TIMEOUT_MS=25000
+READING_AI_RETRY_COUNT=2
+READING_AI_RETRY_BASE_DELAY_MS=1200
+READING_AI_RETRY_MAX_DELAY_MS=4000
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_DEPLOYMENT=
@@ -91,7 +101,8 @@ Notes:
 - `VITE_API_BASE_URL` is not required in production because the frontend uses same-origin APIs.
 - `VITE_GOOGLE_CLIENT_ID` is not required in production because the frontend reads the Google client ID from `/config/auth` at runtime.
 - When `AZURE_STORAGE_ACCOUNT` is set, all storage operations use Azure Blob Storage; otherwise, filesystem JSON storage is used (local dev).
-- Azure OpenAI vars are optional; the adapter exists but is not wired into the main flow.
+- Azure OpenAI vars are optional; when present, the same runtime flow uses Azure OpenAI instead of the standard OpenAI endpoint.
+- Reading generation now uses a larger default timeout and bounded retries because real model latency in production can legitimately exceed 8 seconds.
 
 ## CI/CD Pipeline
 

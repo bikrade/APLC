@@ -4,6 +4,9 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_AZURE_OPENAI_API_VERSION = '2024-10-21'
 const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 15000))
+const READING_RETRY_COUNT = Math.max(0, Number(process.env.READING_AI_RETRY_COUNT || 2))
+const READING_RETRY_BASE_DELAY_MS = Math.max(100, Number(process.env.READING_AI_RETRY_BASE_DELAY_MS || 1200))
+const READING_RETRY_MAX_DELAY_MS = Math.max(READING_RETRY_BASE_DELAY_MS, Number(process.env.READING_AI_RETRY_MAX_DELAY_MS || 4000))
 const READING_REQUEST_MAX_TOKENS = 2600
 const READING_REQUEST_TEMPERATURE = 0.8
 
@@ -27,6 +30,7 @@ function buildMockReadingStoryContent(sessionId: string): string {
   const names = ['Adi', 'Mira', 'Leela', 'Tarin']
   const helpers = ['Jonah', 'Isha', 'Kiran', 'Meera']
   const seed = hashSeed(sessionId)
+  const sessionMarker = (seed % 46656).toString(36).toUpperCase().padStart(3, '0')
   const place = places[seed % places.length] ?? places[0]!
   const object = titles[(seed >> 3) % titles.length] ?? titles[0]!
   const main = names[(seed >> 5) % names.length] ?? names[0]!
@@ -36,7 +40,7 @@ function buildMockReadingStoryContent(sessionId: string): string {
   const pages = Array.from({ length: 4 }, (_, index) => {
     const stage = index + 1
     return [
-      `${main} arrived at ${place} just before sunrise and noticed that the old ${object.toLowerCase()} beside the harbor wall had stopped moving again.`,
+      `${main} arrived at ${place} just before sunrise and noticed that the old ${object.toLowerCase()} beside the harbor wall had stopped moving again, with route marker ${sessionMarker} scratched into its brass frame.`,
       `The town depended on that device to compare tide marks, rain notes, and wind changes before boats were allowed onto the water, so every missed signal made the morning feel tense.`,
       `${helper} joined ${main} with a notebook full of recent observations, and together they studied the scratched brass ring, the fogged glass cover, and the careful symbols left by earlier watchkeepers.`,
       `On this page of the story, they test one idea, reject a weaker guess, and build a stronger explanation from evidence instead of wishful thinking.`,
@@ -135,6 +139,125 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint
 }
 
+type OpenAIRequestError = Error & {
+  retryable?: boolean
+  statusCode?: number
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function createRetryableError(message: string, statusCode?: number): OpenAIRequestError {
+  const error = new Error(message) as OpenAIRequestError
+  error.retryable = true
+  if (statusCode !== undefined) {
+    error.statusCode = statusCode
+  }
+  return error
+}
+
+function isRetryableOpenAIError(error: unknown): error is OpenAIRequestError {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const typedError = error as OpenAIRequestError
+  if (typedError.retryable) {
+    return true
+  }
+
+  if (typeof typedError.statusCode === 'number') {
+    return [408, 409, 429, 500, 502, 503, 504].includes(typedError.statusCode)
+  }
+
+  const message = error.message.toLowerCase()
+  return message.includes('timed out') || message.includes('fetch failed') || message.includes('network') || message.includes('econnreset')
+}
+
+function getRetryDelaysMs(label: string): number[] {
+  if (label !== 'reading-story') {
+    return []
+  }
+
+  return Array.from({ length: READING_RETRY_COUNT }, (_, index) => {
+    const delay = READING_RETRY_BASE_DELAY_MS * (2 ** index)
+    return Math.min(delay, READING_RETRY_MAX_DELAY_MS)
+  })
+}
+
+async function chatCompletionOnce(
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number,
+  temperature: number,
+  label: string,
+  timeoutMs: number,
+): Promise<string> {
+  const cfg = getOpenAIConfig()
+  const startMs = Date.now()
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(cfg.url, {
+      method: 'POST',
+      headers: cfg.headers,
+      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature, ...cfg.bodyExtras }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    const latencyMs = Date.now() - startMs
+    if (controller.signal.aborted) {
+      console.error(`[OpenAI:${label}] TIMEOUT (${latencyMs}ms)`)
+      throw createRetryableError(`OpenAI request timed out after ${timeoutMs}ms.`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+
+  const latencyMs = Date.now() - startMs
+  if (!response.ok) {
+    const body = await response.text()
+    const message = `OpenAI request failed (${response.status}): ${body}`
+    console.error(`[OpenAI:${label}] FAILED ${response.status} (${latencyMs}ms)`, body.slice(0, 200))
+    if ([408, 409, 429, 500, 502, 503, 504].includes(response.status)) {
+      throw createRetryableError(message, response.status)
+    }
+    throw new Error(message)
+  }
+  const data = (await response.json()) as {
+    id?: string
+    model?: string
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  }
+  const usage = data.usage
+  if (isOpenAIDebugLoggingEnabled()) {
+    console.log(
+      `[OpenAI:${label}] ✓ ${latencyMs}ms | model=${data.model ?? cfg.model} | tokens: prompt=${usage?.prompt_tokens ?? '?'} completion=${usage?.completion_tokens ?? '?'} total=${usage?.total_tokens ?? '?'} | finish=${data.choices?.[0]?.finish_reason ?? '?'} | id=${data.id ?? '?'}`,
+    )
+  }
+  callStats.push({
+    label,
+    latencyMs,
+    model: data.model ?? cfg.model,
+    promptTokens: usage?.prompt_tokens ?? 0,
+    completionTokens: usage?.completion_tokens ?? 0,
+    totalTokens: usage?.total_tokens ?? 0,
+    finishReason: data.choices?.[0]?.finish_reason ?? 'unknown',
+    requestId: data.id ?? '',
+  })
+  const content = data.choices?.[0]?.message?.content?.trim()
+  if (!content) {
+    throw new Error('OpenAI returned an empty response.')
+  }
+  return content
+}
+
 function getOpenAIConfig(): ProviderConfig {
   const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT
   const azureApiKey = process.env.AZURE_OPENAI_API_KEY
@@ -194,64 +317,25 @@ async function chatCompletion(
     return content
   }
 
-  const cfg = getOpenAIConfig()
-  const startMs = Date.now()
-  const controller = new AbortController()
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+  const retryDelaysMs = getRetryDelaysMs(label)
+  let attempt = 0
 
-  let response: Response
-  try {
-    response = await fetch(cfg.url, {
-      method: 'POST',
-      headers: cfg.headers,
-      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature, ...cfg.bodyExtras }),
-      signal: controller.signal,
-    })
-  } catch (error) {
-    const latencyMs = Date.now() - startMs
-    if (controller.signal.aborted) {
-      const timeoutError = new Error(`OpenAI request timed out after ${timeoutMs}ms.`)
-      console.error(`[OpenAI:${label}] TIMEOUT (${latencyMs}ms)`)
-      throw timeoutError
+  while (true) {
+    try {
+      return await chatCompletionOnce(messages, maxTokens, temperature, label, timeoutMs)
+    } catch (error) {
+      if (!isRetryableOpenAIError(error) || attempt >= retryDelaysMs.length) {
+        throw error
+      }
+
+      const delayMs = retryDelaysMs[attempt] ?? READING_RETRY_BASE_DELAY_MS
+      console.warn(
+        `[OpenAI:${label}] retrying after attempt ${attempt + 1} failed: ${error.message}. Waiting ${delayMs}ms before retry ${attempt + 2}.`,
+      )
+      attempt += 1
+      await sleep(delayMs)
     }
-    throw error
-  } finally {
-    clearTimeout(timeoutHandle)
   }
-
-  const latencyMs = Date.now() - startMs
-  if (!response.ok) {
-    const body = await response.text()
-    console.error(`[OpenAI:${label}] FAILED ${response.status} (${latencyMs}ms)`, body.slice(0, 200))
-    throw new Error(`OpenAI request failed (${response.status}): ${body}`)
-  }
-  const data = (await response.json()) as {
-    id?: string
-    model?: string
-    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
-    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
-  }
-  const usage = data.usage
-  if (isOpenAIDebugLoggingEnabled()) {
-    console.log(
-      `[OpenAI:${label}] ✓ ${latencyMs}ms | model=${data.model ?? cfg.model} | tokens: prompt=${usage?.prompt_tokens ?? '?'} completion=${usage?.completion_tokens ?? '?'} total=${usage?.total_tokens ?? '?'} | finish=${data.choices?.[0]?.finish_reason ?? '?'} | id=${data.id ?? '?'}`,
-    )
-  }
-  callStats.push({
-    label,
-    latencyMs,
-    model: data.model ?? cfg.model,
-    promptTokens: usage?.prompt_tokens ?? 0,
-    completionTokens: usage?.completion_tokens ?? 0,
-    totalTokens: usage?.total_tokens ?? 0,
-    finishReason: data.choices?.[0]?.finish_reason ?? 'unknown',
-    requestId: data.id ?? '',
-  })
-  const content = data.choices?.[0]?.message?.content?.trim()
-  if (!content) {
-    throw new Error('OpenAI returned an empty response.')
-  }
-  return content
 }
 
 export function isOpenAIConfigured(): boolean {

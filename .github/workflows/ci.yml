@@ -150,6 +150,10 @@ jobs:
               "PORT=3001" \
               "OPENAI_MODEL=gpt-4o-mini" \
               "DATA_ROOT=/app/data" \
+              "READING_AI_TIMEOUT_MS=25000" \
+              "READING_AI_RETRY_COUNT=2" \
+              "READING_AI_RETRY_BASE_DELAY_MS=1200" \
+              "READING_AI_RETRY_MAX_DELAY_MS=4000" \
               "OPENAI_API_KEY=secretref:openai-key" \
               "GOOGLE_CLIENT_ID=secretref:google-client-id" \
               "AUTH_ALLOWED_EMAIL=secretref:auth-email" \

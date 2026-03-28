@@ -543,6 +543,179 @@ describe('APLC backend', () => {
     }
   })
 
+  test('reading session start retries a timed out AI story request and succeeds on a later attempt', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const originalFetch = globalThis.fetch
+    const originalApiKey = process.env.OPENAI_API_KEY
+    const originalTimeout = process.env.READING_AI_TIMEOUT_MS
+    const originalRetryCount = process.env.READING_AI_RETRY_COUNT
+    const originalRetryBaseDelay = process.env.READING_AI_RETRY_BASE_DELAY_MS
+    const originalRetryMaxDelay = process.env.READING_AI_RETRY_MAX_DELAY_MS
+
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.READING_AI_TIMEOUT_MS = '12000'
+    process.env.READING_AI_RETRY_COUNT = '2'
+    process.env.READING_AI_RETRY_BASE_DELAY_MS = '1'
+    process.env.READING_AI_RETRY_MAX_DELAY_MS = '2'
+
+    const repeatedWords = Array.from({ length: 310 }, (_, index) => `word${index + 1}`).join(' ')
+    const storyPayload = {
+      title: 'The Lantern Above Riverstone Crossing',
+      pages: [repeatedWords, repeatedWords, repeatedWords, repeatedWords],
+      summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
+      summaryGuidance: 'Include the setting, the main problem, the key evidence, and the resolution.',
+      keywordGroups: [
+        ['lantern', 'light'],
+        ['bridge', 'crossing'],
+        ['storm', 'wind'],
+        ['signal', 'warning'],
+        ['river', 'water'],
+        ['friend', 'helper'],
+        ['decision', 'choice'],
+        ['resolution', 'ending'],
+      ],
+      vocabularyFocus: [
+        { term: 'lantern', studentFriendlyMeaning: 'a portable light', contextClue: 'It glowed in the dark above the bridge.' },
+        { term: 'crossing', studentFriendlyMeaning: 'a place to move across', contextClue: 'The village used the crossing to get over the river.' },
+        { term: 'signal', studentFriendlyMeaning: 'a sign or message', contextClue: 'The signal told everyone to slow down.' },
+        { term: 'resolved', studentFriendlyMeaning: 'solved or settled', contextClue: 'The problem was resolved when the path was made safe again.' },
+      ],
+      quizItems: [
+        { id: 'reading-quiz-1', prompt: 'Why did the characters look at the lantern?', options: ['It warned them', 'It was broken', 'It was hidden', 'It was noisy'], correctOption: 0 },
+        { id: 'reading-quiz-2', prompt: 'What was the main setting?', options: ['A beach', 'A river crossing', 'A market', 'A classroom'], correctOption: 1 },
+        { id: 'reading-quiz-3', prompt: 'What theme fits best?', options: ['Luck solves everything', 'Rules never matter', 'Careful courage helps others', 'Winning is most important'], correctOption: 2 },
+        { id: 'reading-quiz-4', prompt: 'What helped solve the problem?', options: ['Ignoring the warning', 'Running away', 'Using the signal wisely', 'Waiting for sunrise'], correctOption: 2 },
+      ],
+    }
+
+    let fetchCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      fetchCalls += 1
+      if (fetchCalls === 1) {
+        throw new Error('OpenAI request timed out after 12000ms.')
+      }
+
+      return new Response(JSON.stringify({
+        id: 'openai-chat-2',
+        model: 'gpt-4o-mini',
+        choices: [{ message: { content: JSON.stringify(storyPayload) }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 620, completion_tokens: 410, total_tokens: 1030 },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as typeof fetch)
+
+    try {
+      const response = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject: 'Reading',
+      })
+
+      expect(response.status).toBe(200)
+      expect(fetchCalls).toBe(2)
+      expect(response.body.totalTokensUsed).toBe(1030)
+      expect(response.body.readingStorySource).toBe('ai')
+      expect(response.body.readingStoryFallbackReason).toBeUndefined()
+      expect(response.body.questions[0].title).toBe('The Lantern Above Riverstone Crossing')
+    } finally {
+      vi.unstubAllGlobals()
+      globalThis.fetch = originalFetch
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey
+      }
+      if (originalTimeout === undefined) {
+        delete process.env.READING_AI_TIMEOUT_MS
+      } else {
+        process.env.READING_AI_TIMEOUT_MS = originalTimeout
+      }
+      if (originalRetryCount === undefined) {
+        delete process.env.READING_AI_RETRY_COUNT
+      } else {
+        process.env.READING_AI_RETRY_COUNT = originalRetryCount
+      }
+      if (originalRetryBaseDelay === undefined) {
+        delete process.env.READING_AI_RETRY_BASE_DELAY_MS
+      } else {
+        process.env.READING_AI_RETRY_BASE_DELAY_MS = originalRetryBaseDelay
+      }
+      if (originalRetryMaxDelay === undefined) {
+        delete process.env.READING_AI_RETRY_MAX_DELAY_MS
+      } else {
+        process.env.READING_AI_RETRY_MAX_DELAY_MS = originalRetryMaxDelay
+      }
+    }
+  })
+
+  test('reading session start falls back only after exhausting timed out AI story retries', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const originalFetch = globalThis.fetch
+    const originalApiKey = process.env.OPENAI_API_KEY
+    const originalTimeout = process.env.READING_AI_TIMEOUT_MS
+    const originalRetryCount = process.env.READING_AI_RETRY_COUNT
+    const originalRetryBaseDelay = process.env.READING_AI_RETRY_BASE_DELAY_MS
+    const originalRetryMaxDelay = process.env.READING_AI_RETRY_MAX_DELAY_MS
+
+    process.env.OPENAI_API_KEY = 'test-key'
+    process.env.READING_AI_TIMEOUT_MS = '9000'
+    process.env.READING_AI_RETRY_COUNT = '2'
+    process.env.READING_AI_RETRY_BASE_DELAY_MS = '1'
+    process.env.READING_AI_RETRY_MAX_DELAY_MS = '2'
+
+    let fetchCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      fetchCalls += 1
+      throw new Error('OpenAI request timed out after 9000ms.')
+    }) as typeof fetch)
+
+    try {
+      const response = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject: 'Reading',
+      })
+
+      expect(response.status).toBe(200)
+      expect(fetchCalls).toBe(3)
+      expect(response.body.totalTokensUsed).toBe(0)
+      expect(response.body.readingStorySource).toBe('fallback')
+      expect(String(response.body.readingStoryFallbackReason ?? '')).toContain('timed out after 9000ms')
+    } finally {
+      vi.unstubAllGlobals()
+      globalThis.fetch = originalFetch
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey
+      }
+      if (originalTimeout === undefined) {
+        delete process.env.READING_AI_TIMEOUT_MS
+      } else {
+        process.env.READING_AI_TIMEOUT_MS = originalTimeout
+      }
+      if (originalRetryCount === undefined) {
+        delete process.env.READING_AI_RETRY_COUNT
+      } else {
+        process.env.READING_AI_RETRY_COUNT = originalRetryCount
+      }
+      if (originalRetryBaseDelay === undefined) {
+        delete process.env.READING_AI_RETRY_BASE_DELAY_MS
+      } else {
+        process.env.READING_AI_RETRY_BASE_DELAY_MS = originalRetryBaseDelay
+      }
+      if (originalRetryMaxDelay === undefined) {
+        delete process.env.READING_AI_RETRY_MAX_DELAY_MS
+      } else {
+        process.env.READING_AI_RETRY_MAX_DELAY_MS = originalRetryMaxDelay
+      }
+    }
+  })
+
   test('reading session start counts Azure OpenAI story tokens when Azure config is active', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
