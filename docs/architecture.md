@@ -28,7 +28,7 @@
 
 - Google OAuth 2.0 via Google Identity Services.
 - Server verifies Google ID tokens and issues HMAC-SHA256 signed session tokens (12-hour TTL).
-- Single allowed email enforced via `AUTH_ALLOWED_EMAIL`.
+- A comma-separated Google account allowlist is enforced via `AUTH_ALLOWED_EMAILS`.
 - When Google auth is not configured, falls back to open access (local dev mode).
 - Auth middleware protects all user-scoped routes; 403 returned if token userId ≠ route userId.
 - `POST /auth/google` accepts credentials; `GET /auth/session` returns current session; `GET /config/auth` exposes public client ID.

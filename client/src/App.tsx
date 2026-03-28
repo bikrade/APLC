@@ -1008,6 +1008,7 @@ function App() {
       return await fetch(`${API_BASE}${path}`, {
         ...init,
         headers,
+        credentials: 'same-origin',
         signal: controller.signal,
       })
     } finally {
@@ -1368,6 +1369,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential }),
+        credentials: 'same-origin',
       })
       const data = (await res.json()) as { token?: string; user?: AuthUser; error?: string }
       if (!res.ok || !data.token || !data.user) {
@@ -1423,25 +1425,34 @@ function App() {
     }
   }
 
-  const signOut = (): void => {
-    window.localStorage.removeItem(AUTH_TOKEN_KEY)
-    setAuthToken('')
-    setAuthUser(null)
-    setInsights(null)
-    setDashStats(null)
-    setInProgressSessions([])
-    setSessionId('')
-    setQuestions([])
-    setAnswers([])
-    setReadingStorySource(null)
-    setReadingStoryFallbackReason('')
-    setReadingGenerationStatus(null)
-    setReadingGenerationErrorCode('')
-    setReadingGenerationErrorMessage('')
-    setReadingGenerationChunkCount(0)
-    setReadingGenerationChunksCompleted(0)
-    setError('')
-    setStage('login')
+  const signOut = async (): Promise<void> => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+    } catch {
+      // Clearing local state still signs the user out on the client.
+    } finally {
+      window.localStorage.removeItem(AUTH_TOKEN_KEY)
+      setAuthToken('')
+      setAuthUser(null)
+      setInsights(null)
+      setDashStats(null)
+      setInProgressSessions([])
+      setSessionId('')
+      setQuestions([])
+      setAnswers([])
+      setReadingStorySource(null)
+      setReadingStoryFallbackReason('')
+      setReadingGenerationStatus(null)
+      setReadingGenerationErrorCode('')
+      setReadingGenerationErrorMessage('')
+      setReadingGenerationChunkCount(0)
+      setReadingGenerationChunksCompleted(0)
+      setError('')
+      setStage('login')
+    }
   }
 
   /* ── Start Session ──────────────────────────────────────────── */

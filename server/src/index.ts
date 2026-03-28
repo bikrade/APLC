@@ -9,7 +9,16 @@ import type { NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createSessionToken, getPublicGoogleClientId, isGoogleAuthConfigured, verifyGoogleCredential, verifySessionToken } from './auth'
+import {
+  AUTH_SESSION_COOKIE_NAME,
+  AUTH_TOKEN_STORAGE_KEY,
+  createSessionToken,
+  getAllowedAuthEmails,
+  getPublicGoogleClientId,
+  isGoogleAuthConfigured,
+  verifyGoogleCredential,
+  verifySessionToken,
+} from './auth'
 import {
   deleteSession,
   deleteLegacySessionFiles,
@@ -42,6 +51,7 @@ import {
 import { logger, requestLogger, asyncHandler, getRequestId, telemetry, withLogContext } from './logger'
 
 const app = express()
+app.set('trust proxy', 1)
 const port = Number(process.env.PORT || 3001)
 const clientDistDir = path.resolve(process.cwd(), '../client/dist')
 const clientIndexPath = path.join(clientDistDir, 'index.html')
@@ -619,25 +629,275 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
     return
   }
 
-  const authHeader = req.headers.authorization
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
-  if (!token) {
+  const auth = resolveAuthSession(req)
+  if (!auth) {
     res.status(401).json({ error: 'Authentication required.' })
     return
   }
 
-  const session = verifySessionToken(token)
-  if (!session) {
-    res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' })
-    return
-  }
-
-  req.authSession = session
-  if (typeof req.params.userId === 'string' && req.params.userId && req.params.userId !== session.userId) {
+  req.authSession = auth.session
+  if (typeof req.params.userId === 'string' && req.params.userId && req.params.userId !== auth.session.userId) {
     res.status(403).json({ error: 'Forbidden for this user.' })
     return
   }
   next()
+}
+
+type AuthResolution = {
+  session: NonNullable<AuthenticatedRequest['authSession']>
+  token: string
+}
+
+const SESSION_COOKIE_TTL_MS = 12 * 60 * 60 * 1000
+
+function readCookieValue(req: Request, name: string): string {
+  const cookieHeader = req.headers.cookie
+  if (!cookieHeader) {
+    return ''
+  }
+
+  for (const part of cookieHeader.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=')
+    if (rawName === name) {
+      return decodeURIComponent(rawValue.join('='))
+    }
+  }
+
+  return ''
+}
+
+function setSessionCookie(res: Response, token: string): void {
+  res.cookie(AUTH_SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: SESSION_COOKIE_TTL_MS,
+  })
+}
+
+function clearSessionCookie(res: Response): void {
+  res.clearCookie(AUTH_SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  })
+}
+
+function resolveAuthSession(req: Request): AuthResolution | null {
+  const authHeader = req.headers.authorization
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+  const cookieToken = readCookieValue(req, AUTH_SESSION_COOKIE_NAME)
+  const token = bearerToken || cookieToken
+  if (!token) {
+    return null
+  }
+
+  const session = verifySessionToken(token)
+  if (!session) {
+    return null
+  }
+
+  return { session, token }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function renderLoginShell(): string {
+  const googleClientId = getPublicGoogleClientId() ?? ''
+  const allowedEmails = getAllowedAuthEmails().map(escapeHtml).join(' or ')
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>APLC Sign-In</title>
+      <style>
+        :root {
+          color-scheme: light dark;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        body {
+          margin: 0;
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          background: linear-gradient(145deg, #0f172a, #1e293b 55%, #1d4ed8);
+          color: #e2e8f0;
+          padding: 24px;
+        }
+        .login-shell {
+          width: min(100%, 440px);
+          border-radius: 28px;
+          padding: 36px 32px;
+          background: rgba(15, 23, 42, 0.86);
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+          backdrop-filter: blur(18px);
+        }
+        h1 {
+          margin: 0 0 12px;
+          font-size: 2rem;
+          line-height: 1.05;
+        }
+        p {
+          margin: 0;
+          line-height: 1.6;
+          color: #cbd5e1;
+        }
+        .eyebrow {
+          display: inline-flex;
+          margin-bottom: 16px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(96, 165, 250, 0.16);
+          color: #bfdbfe;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .allowed {
+          margin-top: 16px;
+          font-size: 0.95rem;
+        }
+        .button-wrap {
+          margin-top: 24px;
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .status {
+          margin-top: 18px;
+          min-height: 24px;
+          font-size: 0.95rem;
+          color: #f8fafc;
+          text-align: center;
+        }
+        .status.error {
+          color: #fecaca;
+        }
+      </style>
+      <script src="https://accounts.google.com/gsi/client" async defer></script>
+    </head>
+    <body>
+      <main class="login-shell">
+        <div class="eyebrow">Private Access</div>
+        <h1>Sign in to continue to APLC</h1>
+        <p>The application bundle and study data stay private until an approved Google account signs in.</p>
+        <p class="allowed">Allowed accounts: ${allowedEmails}</p>
+        <div id="google-button" class="button-wrap"></div>
+        <p id="status" class="status" aria-live="polite"></p>
+      </main>
+      <script>
+        const AUTH_TOKEN_KEY = ${JSON.stringify(AUTH_TOKEN_STORAGE_KEY)};
+        const GOOGLE_CLIENT_ID = ${JSON.stringify(googleClientId)};
+        const statusEl = document.getElementById('status');
+        const buttonWrap = document.getElementById('google-button');
+        const returnUrl = window.location.pathname + window.location.search + window.location.hash;
+
+        function setStatus(message, isError = false) {
+          statusEl.textContent = message;
+          statusEl.classList.toggle('error', isError);
+        }
+
+        async function restoreSavedSession() {
+          const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+          if (!token) {
+            return false;
+          }
+          try {
+            const res = await fetch('/auth/session', {
+              method: 'GET',
+              headers: { Authorization: 'Bearer ' + token },
+              cache: 'no-store',
+              credentials: 'same-origin',
+            });
+            if (!res.ok) {
+              window.localStorage.removeItem(AUTH_TOKEN_KEY);
+              return false;
+            }
+            window.location.replace(returnUrl);
+            return true;
+          } catch {
+            window.localStorage.removeItem(AUTH_TOKEN_KEY);
+            return false;
+          }
+        }
+
+        async function handleCredentialResponse(response) {
+          setStatus('Signing in...');
+          try {
+            const res = await fetch('/auth/google', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: response.credential }),
+              credentials: 'same-origin',
+              cache: 'no-store',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.token) {
+              throw new Error(data.error || 'Google sign-in failed.');
+            }
+            window.localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+            window.location.replace(returnUrl);
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : 'Google sign-in failed.', true);
+          }
+        }
+
+        function mountGoogleButton() {
+          if (!window.google || !GOOGLE_CLIENT_ID) {
+            return false;
+          }
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleCredentialResponse,
+          });
+          window.google.accounts.id.renderButton(buttonWrap, {
+            theme: 'outline',
+            size: 'large',
+            shape: 'pill',
+            width: 320,
+            text: 'continue_with',
+          });
+          return true;
+        }
+
+        (async () => {
+          setStatus('Checking your saved session...');
+          if (await restoreSavedSession()) {
+            return;
+          }
+          if (!GOOGLE_CLIENT_ID) {
+            setStatus('Google sign-in is not configured yet.', true);
+            return;
+          }
+          setStatus('Waiting for Google sign-in...');
+          if (mountGoogleButton()) {
+            setStatus('');
+            return;
+          }
+          const interval = window.setInterval(() => {
+            if (mountGoogleButton()) {
+              window.clearInterval(interval);
+              setStatus('');
+            }
+          }, 250);
+        })();
+      </script>
+    </body>
+  </html>`
 }
 
 function toClientQuestion(question: SessionRecord['questions'][number], index: number) {
@@ -684,6 +944,7 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
       session.recentTemplateIds = [...recentTemplateIds, generated.templateId].slice(-30)
     }
   }
+
   await persistSession(session)
 }
 
@@ -1504,6 +1765,7 @@ app.post('/auth/google', noStore, rateLimit('auth-google', 20, 10 * 60 * 1000), 
   try {
     const user = await verifyGoogleCredential(credential)
     const token = createSessionToken(user)
+    setSessionCookie(res, token)
     logger.info('Google auth success', { userId: user.userId, email: user.email })
     res.json({
       token,
@@ -1521,6 +1783,16 @@ app.get('/auth/session', noStore, requireAuth, (req: AuthenticatedRequest, res) 
     res.status(401).json({ error: 'Authentication required.' })
     return
   }
+
+  const refreshedSession = {
+    email: req.authSession.email,
+    name: req.authSession.name,
+    userId: req.authSession.userId,
+    ...(req.authSession.picture ? { picture: req.authSession.picture } : {}),
+  }
+
+  setSessionCookie(res, createSessionToken(refreshedSession))
+
   res.json({
     user: {
       email: req.authSession.email,
@@ -1529,6 +1801,11 @@ app.get('/auth/session', noStore, requireAuth, (req: AuthenticatedRequest, res) 
       userId: req.authSession.userId,
     },
   })
+})
+
+app.post('/auth/logout', noStore, (_req, res) => {
+  clearSessionCookie(res)
+  res.status(204).send()
 })
 
 app.param('userId', (req, res, next, userId) => {
@@ -2393,6 +2670,33 @@ function registerProcessHandlers(): void {
 registerProcessHandlers()
 
 if (fs.existsSync(clientDistDir)) {
+  app.use((req: AuthenticatedRequest, res, next) => {
+    if (!isGoogleAuthConfigured()) {
+      next()
+      return
+    }
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      next()
+      return
+    }
+
+    const auth = resolveAuthSession(req)
+    if (auth) {
+      req.authSession = auth.session
+      next()
+      return
+    }
+
+    res.setHeader('Cache-Control', 'no-store')
+    if (req.path === '/' || path.extname(req.path) === '') {
+      res.type('html').send(renderLoginShell())
+      return
+    }
+
+    res.status(401).type('text/plain').send('Authentication required.')
+  })
+
   app.use(express.static(clientDistDir, {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.html')) {

@@ -32,7 +32,7 @@ param googleClientId string
 
 @description('Allowed email for login.')
 @secure()
-param authAllowedEmail string
+param authAllowedEmails string
 
 @description('Session signing secret.')
 @secure()
@@ -128,8 +128,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           value: googleClientId
         }
         {
-          name: 'auth-email'
-          value: authAllowedEmail
+          name: 'auth-allowed-emails'
+          value: authAllowedEmails
         }
         {
           name: 'session-secret'
@@ -184,8 +184,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'google-client-id'
             }
             {
-              name: 'AUTH_ALLOWED_EMAIL'
-              secretRef: 'auth-email'
+              name: 'AUTH_ALLOWED_EMAILS'
+              secretRef: 'auth-allowed-emails'
             }
             {
               name: 'AUTH_SESSION_SECRET'

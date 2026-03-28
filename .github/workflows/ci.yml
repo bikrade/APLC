@@ -154,7 +154,6 @@ jobs:
             --secrets \
               "openai-key=${{ secrets.OPENAI_API_KEY }}" \
               "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
-              "auth-email=${{ secrets.AUTH_ALLOWED_EMAIL }}" \
               "session-secret=${{ secrets.AUTH_SESSION_SECRET }}"
 
       - name: Capture current Container App FQDN
@@ -178,7 +177,7 @@ jobs:
               "READING_AI_RETRY_MAX_DELAY_MS=4000" \
               "OPENAI_API_KEY=secretref:openai-key" \
               "GOOGLE_CLIENT_ID=secretref:google-client-id" \
-              "AUTH_ALLOWED_EMAIL=secretref:auth-email" \
+              "AUTH_ALLOWED_EMAILS=aditya.debnath.999@gmail.com,d.bikram@gmail.com" \
               "AUTH_SESSION_SECRET=secretref:session-secret" \
               "AZURE_STORAGE_ACCOUNT=aplcfiles2026" \
               "AZURE_STORAGE_CONTAINER=userdata" \

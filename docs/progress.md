@@ -45,7 +45,7 @@
 - Reliability hardening pass: added process-level error handlers, express error middleware, env-configurable client API base URL, and log-friendly local run scripts for backend (`dev:local`, `start:local`).
 - Division subject fully implemented with decimal, fraction, percentage, and mixed question types and division-specific help steps.
 - Reading subject fully implemented: "The Monsoon Clock" story (5 pages), reading page tracking with WPM calculation, free-text summary question with keyword-based comprehension + speed scoring.
-- Google OAuth 2.0 authentication: `POST /auth/google`, `GET /auth/session`, `GET /config/auth`. HMAC-SHA256 session tokens with 12-hour TTL. Single allowed email via `AUTH_ALLOWED_EMAIL`.
+- Google OAuth 2.0 authentication: `POST /auth/google`, `GET /auth/session`, `POST /auth/logout`, `GET /config/auth`. HMAC-SHA256 session tokens with 12-hour TTL, cookie-backed app/asset protection, and a comma-separated allowlist via `AUTH_ALLOWED_EMAILS`.
 - Auth middleware added to all user-scoped routes; 403 returned if token userId ≠ route userId.
 - Timing-safe signature comparison (`crypto.timingSafeEqual`) for session token verification.
 - Security headers added: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, COOP, CORP. Disabled `x-powered-by`.

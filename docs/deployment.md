@@ -59,7 +59,7 @@ READING_AI_RETRY_COUNT=2
 READING_AI_RETRY_BASE_DELAY_MS=1200
 READING_AI_RETRY_MAX_DELAY_MS=4000
 GOOGLE_CLIENT_ID=secretref:google-client-id
-AUTH_ALLOWED_EMAIL=secretref:auth-email
+AUTH_ALLOWED_EMAILS=aditya.debnath.999@gmail.com,d.bikram@gmail.com
 AUTH_SESSION_SECRET=secretref:session-secret
 AZURE_STORAGE_ACCOUNT=aplcfiles2026
 AZURE_STORAGE_CONTAINER=userdata
@@ -72,7 +72,7 @@ CORS_ALLOWED_ORIGINS=https://<current-aplc-app-fqdn>
 ```env
 PORT=3001
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-AUTH_ALLOWED_EMAIL=adi@gmail.com
+AUTH_ALLOWED_EMAILS=aditya.debnath.999@gmail.com,d.bikram@gmail.com
 AUTH_SESSION_SECRET=replace-with-a-long-random-secret
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
@@ -152,7 +152,7 @@ The lint and test automation is wired through package scripts rather than duplic
 | `REGISTRY_PASSWORD` | ACR admin password |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `AUTH_ALLOWED_EMAIL` | Allowed user email |
+| `AUTH_ALLOWED_EMAILS` | Comma-separated list of allowed Google account emails |
 | `AUTH_SESSION_SECRET` | HMAC session signing secret |
 | `APPINSIGHTS_CONNECTION_STRING` | Application Insights connection |
 

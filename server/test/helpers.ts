@@ -2,16 +2,19 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { SessionRecord } from '../src/types'
+import { AUTH_SESSION_COOKIE_NAME } from '../src/auth'
 
 type TestAppContext = {
   app: import('express').Express
   dataRoot: string
   cleanup: () => Promise<void>
   createAuthToken: () => string
+  createAuthCookie: () => string
 }
 
 type SetupOptions = {
   googleAuth?: boolean
+  clientDist?: boolean
 }
 
 const TEST_PROFILE = {
@@ -36,13 +39,18 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestAppC
   process.env.NODE_ENV = 'test'
   process.env.DATA_ROOT = dataRoot
 
+  const clientDistDir = path.resolve(process.cwd(), '../client/dist')
+  const clientDistExisted = await fs.access(clientDistDir).then(() => true).catch(() => false)
+  const authProbePath = path.join(clientDistDir, 'assets', '__auth_probe.js')
+  let createdIndexFile = false
+
   if (options.googleAuth) {
     process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com'
-    process.env.AUTH_ALLOWED_EMAIL = 'adi@gmail.com'
+    process.env.AUTH_ALLOWED_EMAILS = 'adi@gmail.com,parent@gmail.com'
     process.env.AUTH_SESSION_SECRET = 'test-session-secret'
   } else {
     process.env.GOOGLE_CLIENT_ID = ''
-    process.env.AUTH_ALLOWED_EMAIL = ''
+    process.env.AUTH_ALLOWED_EMAILS = ''
     process.env.AUTH_SESSION_SECRET = ''
   }
   process.env.OPENAI_API_KEY = ''
@@ -50,6 +58,17 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestAppC
   delete process.env.AZURE_OPENAI_API_KEY
   delete process.env.AZURE_OPENAI_DEPLOYMENT
   delete process.env.AZURE_OPENAI_API_VERSION
+
+  if (options.clientDist) {
+    await fs.mkdir(path.join(clientDistDir, 'assets'), { recursive: true })
+    await fs.writeFile(authProbePath, 'window.__AUTH_PROBE__ = true;\n', 'utf8')
+    const indexPath = path.join(clientDistDir, 'index.html')
+    const indexExists = await fs.access(indexPath).then(() => true).catch(() => false)
+    if (!indexExists) {
+      await fs.writeFile(indexPath, '<!doctype html><html><body>aplc-test-shell</body></html>\n', 'utf8')
+      createdIndexFile = true
+    }
+  }
 
   const serverModule = await import('../src/index')
   const authModule = await import('../src/auth')
@@ -64,17 +83,32 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestAppC
         name: 'Adi',
         userId: 'adi',
       }),
+    createAuthCookie: () => `${AUTH_SESSION_COOKIE_NAME}=${authModule.createSessionToken({
+      email: 'adi@gmail.com',
+      name: 'Adi',
+      userId: 'adi',
+    })}`,
     cleanup: async () => {
       serverModule.resetInMemoryState()
       delete process.env.DATA_ROOT
       delete process.env.GOOGLE_CLIENT_ID
       delete process.env.AUTH_ALLOWED_EMAIL
+      delete process.env.AUTH_ALLOWED_EMAILS
       delete process.env.AUTH_SESSION_SECRET
       delete process.env.OPENAI_API_KEY
       delete process.env.AZURE_OPENAI_ENDPOINT
       delete process.env.AZURE_OPENAI_API_KEY
       delete process.env.AZURE_OPENAI_DEPLOYMENT
       delete process.env.AZURE_OPENAI_API_VERSION
+      if (options.clientDist) {
+        await fs.rm(authProbePath, { force: true })
+        if (createdIndexFile) {
+          await fs.rm(path.join(clientDistDir, 'index.html'), { force: true })
+        }
+        if (!clientDistExisted) {
+          await fs.rm(clientDistDir, { recursive: true, force: true })
+        }
+      }
       await fs.rm(tempRoot, { recursive: true, force: true })
     },
   }

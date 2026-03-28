@@ -21,7 +21,7 @@ az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.in
 - **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, today-vs-yesterday practice bars against a profile-driven daily goal, best-next-step coaching, mastery, detailed insights, and parent review
 - **Session modes** — each subject can start in `Guided` mode with live correctness feedback or `Quiz` mode with end-of-session review
 - **Release badge** — top-nav version pill generated from git history with embedded fallback metadata plus click-to-open recent change notes even if the runtime JSON asset is temporarily unavailable
-- **Google OAuth 2.0** — HMAC-SHA256 session tokens, single allowed email
+- **Google OAuth 2.0** — HMAC-SHA256 session tokens, two-account allowlist, and protected app bundle delivery
 - **Duolingo-style UX** — confetti celebrations, animated feedback, KaTeX math rendering
 
 ## Architecture
@@ -99,7 +99,7 @@ PORT=3001
 OPENAI_API_KEY=your-openai-key
 OPENAI_MODEL=gpt-4o-mini
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-AUTH_ALLOWED_EMAIL=allowed@email.com
+AUTH_ALLOWED_EMAILS=aditya.debnath.999@gmail.com,d.bikram@gmail.com
 AUTH_SESSION_SECRET=replace-with-a-long-random-secret
 ```
 

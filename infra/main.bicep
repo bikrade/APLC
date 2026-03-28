@@ -75,9 +75,9 @@ param openAiModel string = 'gpt-4o-mini'
 @secure()
 param googleClientId string
 
-@description('Allowed email for login.')
+@description('Comma-separated list of allowed Google account emails for login.')
 @secure()
-param authAllowedEmail string
+param authAllowedEmails string
 
 @description('Session signing secret.')
 @secure()
@@ -300,7 +300,7 @@ module containerAppDeployment './container-app.bicep' = if (deployContainerApp) 
     registryPassword: acrPassword
     containerImage: containerImage
     googleClientId: googleClientId
-    authAllowedEmail: authAllowedEmail
+    authAllowedEmails: authAllowedEmails
     authSessionSecret: authSessionSecret
     openAiApiKey: openAiApiKey
     openAiModel: openAiModel

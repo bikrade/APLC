@@ -107,6 +107,26 @@ describe('APLC backend', () => {
     expect(authenticated.body.users).toEqual([{ id: 'adi', name: 'Adi' }])
   })
 
+  test('serves a login shell and blocks static assets until a valid session cookie is present', async () => {
+    const ctx = await setupTestApp({ googleAuth: true, clientDist: true })
+    cleanupCurrent = ctx.cleanup
+
+    const loginShell = await request(ctx.app).get('/')
+    expect(loginShell.status).toBe(200)
+    expect(loginShell.headers['content-type']).toContain('text/html')
+    expect(loginShell.text).toContain('Sign in to continue to APLC')
+
+    const blockedAsset = await request(ctx.app).get('/assets/__auth_probe.js')
+    expect(blockedAsset.status).toBe(401)
+    expect(blockedAsset.text).toMatch(/Authentication required/i)
+
+    const allowedAsset = await request(ctx.app)
+      .get('/assets/__auth_probe.js')
+      .set('Cookie', ctx.createAuthCookie())
+    expect(allowedAsset.status).toBe(200)
+    expect(allowedAsset.text).toContain('__AUTH_PROBE__')
+  })
+
   test('rate limits repeated Google auth attempts', async () => {
     const ctx = await setupTestApp({ googleAuth: true })
     cleanupCurrent = ctx.cleanup

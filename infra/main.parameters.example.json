@@ -74,7 +74,7 @@
     "googleClientId": {
       "value": "__SET_ME__"
     },
-    "authAllowedEmail": {
+    "authAllowedEmails": {
       "value": "__SET_ME__"
     },
     "authSessionSecret": {

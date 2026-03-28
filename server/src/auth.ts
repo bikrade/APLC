@@ -1,6 +1,9 @@
 import crypto from 'node:crypto'
 import { OAuth2Client } from 'google-auth-library'
 
+export const AUTH_SESSION_COOKIE_NAME = 'aplc_session'
+export const AUTH_TOKEN_STORAGE_KEY = 'aplc_auth_token'
+
 type AuthSession = {
   email: string
   name: string
@@ -29,12 +32,25 @@ export function getPublicGoogleClientId(): string | null {
   return process.env.GOOGLE_CLIENT_ID || null
 }
 
-function getAllowedEmail(): string {
-  const email = process.env.AUTH_ALLOWED_EMAIL
-  if (!email) {
-    throw new Error('Missing AUTH_ALLOWED_EMAIL.')
+function getAllowedEmailConfig(): string {
+  const configuredEmails = process.env.AUTH_ALLOWED_EMAILS || process.env.AUTH_ALLOWED_EMAIL
+  if (!configuredEmails) {
+    throw new Error('Missing AUTH_ALLOWED_EMAILS.')
   }
-  return email.trim().toLowerCase()
+  return configuredEmails
+}
+
+export function getAllowedAuthEmails(): string[] {
+  return Array.from(new Set(
+    getAllowedEmailConfig()
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  ))
+}
+
+export function isEmailAllowedForSignIn(email: string): boolean {
+  return getAllowedAuthEmails().includes(email.trim().toLowerCase())
 }
 
 function getSessionSecret(): string {
@@ -46,7 +62,7 @@ function getSessionSecret(): string {
 }
 
 export function isGoogleAuthConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.AUTH_ALLOWED_EMAIL && process.env.AUTH_SESSION_SECRET)
+  return Boolean(process.env.GOOGLE_CLIENT_ID && (process.env.AUTH_ALLOWED_EMAILS || process.env.AUTH_ALLOWED_EMAIL) && process.env.AUTH_SESSION_SECRET)
 }
 
 export async function verifyGoogleCredential(credential: string): Promise<Omit<AuthSession, 'exp'>> {
@@ -60,8 +76,8 @@ export async function verifyGoogleCredential(credential: string): Promise<Omit<A
   if (!payload || !email || !payload.email_verified) {
     throw new Error('Google account could not be verified.')
   }
-  if (email !== getAllowedEmail()) {
-    throw new Error('This app is only available to the allowed Google account.')
+  if (!isEmailAllowedForSignIn(email)) {
+    throw new Error('This app is only available to approved Google accounts.')
   }
 
   return {
