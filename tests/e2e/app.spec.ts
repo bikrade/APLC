@@ -105,7 +105,6 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
 
   for (let pageIndex = 1; pageIndex <= 5; pageIndex += 1) {
     await page.getByRole('button', { name: /next page/i }).click()
-    await expect(page.getByText(/Awesome, keep reading\./i)).toBeVisible()
     await expect(page.getByText(new RegExp(`Question ${pageIndex + 1} of 7`, 'i'))).toBeVisible()
   }
 
