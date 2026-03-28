@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "release:sync": "node scripts/generate-release-info.mjs",
+    "test:release": "node --test scripts/generate-release-info.test.mjs",
     "setup:hooks": "git config core.hooksPath .githooks",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run build",
@@ -16,7 +17,7 @@
     "test:server": "npm --prefix server run test",
     "pretest:e2e": "npm run lint:e2e",
     "test:e2e": "playwright test",
-    "test": "npm run test:client && npm run test:server && npm run test:e2e",
+    "test": "npm run test:release && npm run test:client && npm run test:server && npm run test:e2e",
     "audit:root": "npm audit --audit-level=high --omit=dev",
     "audit:client": "npm --prefix client audit --audit-level=high --omit=dev",
     "audit:server": "npm --prefix server audit --audit-level=high --omit=dev",

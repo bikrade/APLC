@@ -80,4 +80,18 @@ log 'Running container smoke checks.'
 curl --silent --fail --max-time 5 "http://127.0.0.1:${HOST_PORT}/health" >/dev/null
 curl --silent --fail --max-time 5 "http://127.0.0.1:${HOST_PORT}/config/auth" >/dev/null
 
+RELEASE_INFO_RESPONSE="$(curl --silent --fail --max-time 5 "http://127.0.0.1:${HOST_PORT}/release-info.json")"
+printf '%s' "$RELEASE_INFO_RESPONSE" | node -e "
+const chunks = []
+process.stdin.on('data', (chunk) => chunks.push(chunk))
+process.stdin.on('end', () => {
+  const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  const hasChanges = Array.isArray(payload.changes) && payload.changes.length > 0
+  if (payload.channel === 'local' || !hasChanges) {
+    console.error('[validate:push] release-info.json returned fallback metadata from the production image build.')
+    process.exit(1)
+  }
+})
+"
+
 log 'All pre-push validation checks passed.'

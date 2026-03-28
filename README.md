@@ -143,7 +143,7 @@ Notes:
 - `npm run test:server` runs server test linting plus source and test typechecks before Vitest.
 - `npm run test:e2e` runs Playwright linting before browser automation.
 - The production image path used by CI/CD is additionally validated by the workflow's Docker Buildx job before deployment.
-- `npm run validate:push` runs lint, build, test, a Docker Buildx production-image build, and a local container smoke check on `/health` and `/config/auth`.
+- `npm run validate:push` runs lint, build, test, a Docker Buildx production-image build, and local container smoke checks on `/health`, `/config/auth`, and `/release-info.json` so release history regressions fail before push.
 - `npm run setup:hooks` configures the versioned `.githooks/pre-push` hook so local pushes automatically enforce `npm run validate:push`.
 
 ## Documentation

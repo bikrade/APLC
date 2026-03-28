@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 const publicOutputPath = path.join(repoRoot, 'client', 'public', 'release-info.json')
 const embeddedOutputPath = path.join(repoRoot, 'client', 'src', 'generated', 'releaseInfo.ts')
+const EMBEDDED_RELEASE_INFO_PATTERN = /export const embeddedReleaseInfo = (\{[\s\S]*\}) satisfies ReleaseInfo/ 
 
 function runGit(command) {
   return execSync(command, {
@@ -75,6 +76,24 @@ function buildLocalFallbackReleaseInfo() {
   }
 }
 
+export function parseEmbeddedReleaseInfoModule(moduleContents) {
+  const match = EMBEDDED_RELEASE_INFO_PATTERN.exec(moduleContents)
+  if (!match) {
+    throw new Error('embedded release info module did not match the expected format')
+  }
+
+  return JSON.parse(match[1])
+}
+
+export function readExistingGeneratedReleaseInfo() {
+  if (!fs.existsSync(embeddedOutputPath)) {
+    return null
+  }
+
+  const moduleContents = fs.readFileSync(embeddedOutputPath, 'utf8')
+  return parseEmbeddedReleaseInfoModule(moduleContents)
+}
+
 function writePublicReleaseInfoFile(releaseInfo) {
   const contents = `${JSON.stringify(releaseInfo, null, 2)}\n`
   fs.mkdirSync(path.dirname(publicOutputPath), { recursive: true })
@@ -87,16 +106,32 @@ function writeEmbeddedReleaseInfoModule(releaseInfo) {
   fs.writeFileSync(embeddedOutputPath, moduleContents)
 }
 
-try {
-  const releaseInfo = buildReleaseInfo()
-  writePublicReleaseInfoFile(releaseInfo)
-  writeEmbeddedReleaseInfoModule(releaseInfo)
-  console.log(`release info synced -> ${path.relative(repoRoot, publicOutputPath)} and ${path.relative(repoRoot, embeddedOutputPath)}`)
-} catch (error) {
-  const fallbackReleaseInfo = buildLocalFallbackReleaseInfo()
-  writePublicReleaseInfoFile(fallbackReleaseInfo)
-  writeEmbeddedReleaseInfoModule(fallbackReleaseInfo)
-  console.warn('release info sync fell back to local metadata')
-  console.warn(error instanceof Error ? error.message : String(error))
-  process.exit(0)
+export function syncReleaseInfo() {
+  try {
+    const releaseInfo = buildReleaseInfo()
+    writePublicReleaseInfoFile(releaseInfo)
+    writeEmbeddedReleaseInfoModule(releaseInfo)
+    console.log(`release info synced -> ${path.relative(repoRoot, publicOutputPath)} and ${path.relative(repoRoot, embeddedOutputPath)}`)
+    return releaseInfo
+  } catch (error) {
+    const existingReleaseInfo = readExistingGeneratedReleaseInfo()
+    if (existingReleaseInfo) {
+      writePublicReleaseInfoFile(existingReleaseInfo)
+      writeEmbeddedReleaseInfoModule(existingReleaseInfo)
+      console.warn('release info sync reused embedded metadata because git metadata was unavailable')
+      console.warn(error instanceof Error ? error.message : String(error))
+      return existingReleaseInfo
+    }
+
+    const fallbackReleaseInfo = buildLocalFallbackReleaseInfo()
+    writePublicReleaseInfoFile(fallbackReleaseInfo)
+    writeEmbeddedReleaseInfoModule(fallbackReleaseInfo)
+    console.warn('release info sync fell back to local metadata')
+    console.warn(error instanceof Error ? error.message : String(error))
+    return fallbackReleaseInfo
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  syncReleaseInfo()
 }

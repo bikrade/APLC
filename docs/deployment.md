@@ -125,7 +125,7 @@ The lint and test automation is wired through package scripts rather than duplic
 - Client `pretest` lints Vitest files before running unit tests.
 - Server `pretest` lints test files and typechecks both source and tests before running integration tests.
 - Root `pretest:e2e` lints Playwright specs before running browser tests.
-- Root `npm run validate:push` is the local pre-push gate: it runs lint, build, test, a Docker Buildx production-image build, and local container smoke checks.
+- Root `npm run validate:push` is the local pre-push gate: it runs lint, build, test, a Docker Buildx production-image build, and local container smoke checks including `/release-info.json` so production-image metadata regressions are caught before push.
 - The repo's versioned `.githooks/pre-push` hook calls `npm run validate:push` automatically after `npm run setup:hooks` configures `core.hooksPath`.
 
 ### CD (main branch only)
