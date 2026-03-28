@@ -327,6 +327,7 @@ const THEME_STORAGE_KEY = 'aplc_theme'
 const SESSION_TARGET_ACCURACY = 80 // target % for the session
 const RELEASE_INFO_URLS = getReleaseInfoCandidates(import.meta.env.BASE_URL)
 const DEFAULT_RELEASE_INFO: ReleaseInfo = embeddedReleaseInfo
+const COPYRIGHT_YEAR = new Date().getFullYear()
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') {
@@ -2052,6 +2053,15 @@ function App() {
 
     return (
       <div className="dashboard-screen">
+        <section className="developer-banner" aria-label="Developer credit">
+          <p className="developer-banner-copy">
+            <span className="developer-banner-label">Developed by</span>
+            <span className="developer-banner-emphasis">Bikramjit Debnath</span>
+            <span className="developer-banner-separator" aria-hidden="true">•</span>
+            <span className="developer-banner-copyright">© {COPYRIGHT_YEAR} Bikramjit Debnath. All rights reserved.</span>
+          </p>
+        </section>
+
         {/* Nav */}
         <nav className="dashboard-nav">
           <div className="nav-brand-wrap">
@@ -2108,11 +2118,6 @@ function App() {
 
         <div className="dashboard-body">
           {error && <div className="error-msg">⚠️ {error}</div>}
-
-          <section className="developer-banner" aria-label="Developer credit">
-            <p className="developer-banner-kicker">Developed by</p>
-            <p className="developer-banner-name">Bikramjit Debnath</p>
-          </section>
 
           <div className="welcome-header">
             <p className="welcome-date">{formatCurrentDate()}</p>

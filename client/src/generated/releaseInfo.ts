@@ -1,13 +1,18 @@
 import type { ReleaseInfo } from '../lib/releaseInfo'
 
 export const embeddedReleaseInfo = {
-  "version": "0.6.43",
+  "version": "0.6.44",
   "channel": "beta",
-  "displayLabel": "v0.6.43 beta",
-  "shortSha": "b14a046",
+  "displayLabel": "v0.6.44 beta",
+  "shortSha": "a9420c6",
   "releaseDate": "2026-03-28",
-  "headline": "Preserve release metadata in image builds",
+  "headline": "Fetch full history for release metadata",
   "changes": [
+    {
+      "sha": "a9420c6",
+      "date": "2026-03-28",
+      "summary": "Fetch full history for release metadata"
+    },
     {
       "sha": "b14a046",
       "date": "2026-03-28",
@@ -22,11 +27,6 @@ export const embeddedReleaseInfo = {
       "sha": "4ca0e25",
       "date": "2026-03-28",
       "summary": "Stabilize reading flow e2e assertion"
-    },
-    {
-      "sha": "68c2965",
-      "date": "2026-03-28",
-      "summary": "Harden post-deploy readiness verification"
     }
   ]
 } satisfies ReleaseInfo

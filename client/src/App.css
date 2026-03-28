@@ -391,33 +391,53 @@
 }
 
 .developer-banner {
+  position: sticky;
+  top: 0;
+  z-index: 110;
   display: flex;
-  align-items: baseline;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.9)),
+    radial-gradient(circle at top center, rgba(59, 130, 246, 0.08), transparent 58%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.developer-banner-copy {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 10px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 0 18px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(31, 36, 55, 0.1);
-  background: linear-gradient(135deg, rgba(88, 204, 2, 0.1), rgba(28, 176, 246, 0.12));
-  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.06);
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #60708d;
 }
 
-.developer-banner-kicker {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+.developer-banner-label {
+  font-weight: 700;
+  color: #7b879c;
 }
 
-.developer-banner-name {
-  margin: 0;
-  font-size: 15px;
+.developer-banner-emphasis {
   font-weight: 900;
-  color: var(--color-text-primary);
+  color: #2b436f;
+}
+
+.developer-banner-separator {
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.developer-banner-copyright {
+  font-weight: 700;
+  color: #74839c;
 }
 
 .nav-user {
@@ -3430,8 +3450,12 @@
   }
 
   .developer-banner {
-    flex-wrap: wrap;
-    border-radius: 20px;
+    padding: 12px 16px;
+  }
+
+  .developer-banner-copy {
+    gap: 8px;
+    font-size: 13px;
   }
 }
 
@@ -4079,8 +4103,31 @@ html[data-theme='dark'] .nav-release-divider {
 }
 
 html[data-theme='dark'] .developer-banner {
-  background: linear-gradient(135deg, rgba(88, 204, 2, 0.14), rgba(28, 176, 246, 0.14));
-  border-color: rgba(127, 145, 168, 0.18);
+  border-bottom-color: rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(17, 24, 39, 0.92)),
+    radial-gradient(circle at top center, rgba(96, 165, 250, 0.16), transparent 62%);
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.38);
+}
+
+html[data-theme='dark'] .developer-banner-copy {
+  color: #a8b4c7;
+}
+
+html[data-theme='dark'] .developer-banner-label {
+  color: #93a4bc;
+}
+
+html[data-theme='dark'] .developer-banner-emphasis {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .developer-banner-separator {
+  color: rgba(148, 163, 184, 0.72);
+}
+
+html[data-theme='dark'] .developer-banner-copyright {
+  color: #b5c0d4;
 }
 
 html[data-theme='dark'] .nav-streak {
