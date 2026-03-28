@@ -9,6 +9,102 @@ const READING_REQUEST_TEMPERATURE = 0.8
 
 const callStats: OpenAICallStat[] = []
 
+function isOpenAIMockEnabled(): boolean {
+  return process.env.OPENAI_MOCK_RESPONSES === 'true'
+}
+
+function hashSeed(value: string): number {
+  let hash = 0
+  for (const char of value) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return hash
+}
+
+function buildMockReadingStoryContent(sessionId: string): string {
+  const places = ['Harbor Reach', 'Copper Bay', 'Mistral Point', 'Moonwater Quay']
+  const titles = ['Signal Lantern', 'Storm Ledger', 'Harbor Compass', 'Tide Archive']
+  const names = ['Adi', 'Mira', 'Leela', 'Tarin']
+  const helpers = ['Jonah', 'Isha', 'Kiran', 'Meera']
+  const seed = hashSeed(sessionId)
+  const place = places[seed % places.length] ?? places[0]!
+  const object = titles[(seed >> 3) % titles.length] ?? titles[0]!
+  const main = names[(seed >> 5) % names.length] ?? names[0]!
+  const helper = helpers[(seed >> 7) % helpers.length] ?? helpers[0]!
+  const title = `${main} and the ${object} of ${place}`
+
+  const pages = Array.from({ length: 4 }, (_, index) => {
+    const stage = index + 1
+    return [
+      `${main} arrived at ${place} just before sunrise and noticed that the old ${object.toLowerCase()} beside the harbor wall had stopped moving again.`,
+      `The town depended on that device to compare tide marks, rain notes, and wind changes before boats were allowed onto the water, so every missed signal made the morning feel tense.`,
+      `${helper} joined ${main} with a notebook full of recent observations, and together they studied the scratched brass ring, the fogged glass cover, and the careful symbols left by earlier watchkeepers.`,
+      `On this page of the story, they test one idea, reject a weaker guess, and build a stronger explanation from evidence instead of wishful thinking.`,
+      `They compare fresh measurements to older records, notice a pattern that other people ignored, and realize the broken reading is connected to a hidden catch inside the frame rather than to the weather itself.`,
+      `Each new clue matters because the harbor stores, the lower walkway, and the fishing crews all need enough warning time to move equipment before the next storm surge reaches the docks.`,
+      `${main} writes down the sequence carefully, because remembering the order of events will help explain why the repair works and why the town should trust the signal again.`,
+      `By the end of stage ${stage}, the problem is clearer, the risk feels more immediate, and the evidence is strong enough that a careful reader can trace exactly how the characters are thinking.`,
+      `To test the mechanism properly, they repeat the comparison at midday, then again when the wind changes direction, and every repetition helps them separate dependable clues from noise.`,
+      `Several adults ask impatient questions, but ${main} slows the conversation down, points to the written records, and explains why a reliable signal must be based on patterns that can be checked by anyone.`,
+      `That insistence on clear proof changes the mood around the harbor, because people stop treating the ${object.toLowerCase()} as a relic and begin to see it as a tool that can help the whole town act early.`,
+      `${helper} notices one more detail in the margin of an older page, and that final note connects the damaged latch, the tide schedule, and the warning routine into one complete explanation.`,
+      `When the next weather shift arrives, the restored signal gives the community enough time to move supplies, guide younger children away from the lower steps, and prepare the docks without panic.`,
+      `The success matters not because the characters guessed well, but because they paid attention, checked their assumptions, and turned careful observations into a shared plan that other people could trust.`
+    ].join(' ')
+  })
+
+  return JSON.stringify({
+    title,
+    pages,
+    summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
+    summaryGuidance: `Include the setting in ${place}, the problem with the ${object.toLowerCase()}, the evidence ${main} and ${helper} studied, and how their reasoning helped protect the harbor.`,
+    keywordGroups: [
+      [main.toLowerCase()],
+      [helper.toLowerCase()],
+      [place.toLowerCase()],
+      [object.toLowerCase()],
+      ['harbor', 'dock', 'boats'],
+      ['signal', 'warning', 'alert'],
+      ['evidence', 'records', 'notes'],
+      ['repair', 'restore', 'fix'],
+    ],
+    vocabularyFocus: [
+      { term: 'observations', studentFriendlyMeaning: 'careful things people notice and record', contextClue: `${helper} brings observations from the harbor to compare with older notes.` },
+      { term: 'sequence', studentFriendlyMeaning: 'the order in which things happen', contextClue: `${main} writes the sequence down so the repair can be explained clearly.` },
+      { term: 'immediate', studentFriendlyMeaning: 'happening right away or very soon', contextClue: 'The risk feels immediate because the storm surge could reach the docks soon.' },
+      { term: 'reasoning', studentFriendlyMeaning: 'careful thinking based on facts and clues', contextClue: 'Their reasoning improves when they compare new evidence with older records.' },
+    ],
+    quizItems: [
+      { id: 'reading-quiz-1', prompt: `Why did ${main} and ${helper} study the notebook and the device together?`, options: ['To decorate the harbor wall', 'To find evidence for why the signal had failed', 'To race the fishing crews', 'To replace the weather entirely'], correctOption: 1 },
+      { id: 'reading-quiz-2', prompt: 'What setting is most important in the story?', options: ['A forest trail', 'A school library', `${place}`, 'A mountain cave'], correctOption: 2 },
+      { id: 'reading-quiz-3', prompt: 'Which theme fits the story best?', options: ['Luck solves problems faster than evidence', 'Careful evidence and teamwork build trust', 'Silence is the best response to danger', 'Old tools should always be ignored'], correctOption: 1 },
+      { id: 'reading-quiz-4', prompt: 'Why does the story mention the order of events several times?', options: ['To confuse the reader', 'To prove that sequence helps explain the repair and the warning', 'To make the story longer', 'To hide the main problem'], correctOption: 1 },
+    ],
+  })
+}
+
+function getMockChatCompletionContent(messages: Array<{ role: string; content: string }>, label: string): string {
+  if (label === 'reading-story') {
+    const sessionPrompt = messages.find((message) => message.role === 'user')?.content ?? ''
+    const sessionId = sessionPrompt.match(/Session seed:\s*(.+)/)?.[1]?.trim() ?? 'mock-session'
+    return buildMockReadingStoryContent(sessionId)
+  }
+
+  if (label === 'hints') {
+    return ['Estimate the scale of the numbers first.', 'Choose the operation that matches the relationship.', 'Check whether the result is reasonable for the question.'].join('\n')
+  }
+
+  if (label === 'explanation') {
+    return 'Check the operation carefully, then use the relationship in the question to confirm whether your answer is reasonable.'
+  }
+
+  if (label === 'questions') {
+    return JSON.stringify([])
+  }
+
+  return 'Mock AI response'
+}
+
 function isOpenAIDebugLoggingEnabled(): boolean {
   return process.env.OPENAI_DEBUG_LOGS === 'true'
 }
@@ -83,6 +179,21 @@ async function chatCompletion(
   label: string = 'chat',
   timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<string> {
+  if (isOpenAIMockEnabled()) {
+    const content = getMockChatCompletionContent(messages, label)
+    callStats.push({
+      label,
+      latencyMs: 1,
+      model: 'mock-openai',
+      promptTokens: 320,
+      completionTokens: Math.max(64, Math.min(maxTokens, 640)),
+      totalTokens: 960,
+      finishReason: 'stop',
+      requestId: `mock-${label}`,
+    })
+    return content
+  }
+
   const cfg = getOpenAIConfig()
   const startMs = Date.now()
   const controller = new AbortController()
@@ -145,7 +256,7 @@ async function chatCompletion(
 
 export function isOpenAIConfigured(): boolean {
   return Boolean(
-    process.env.OPENAI_API_KEY || (
+    isOpenAIMockEnabled() || process.env.OPENAI_API_KEY || (
       process.env.AZURE_OPENAI_ENDPOINT &&
       process.env.AZURE_OPENAI_API_KEY &&
       process.env.AZURE_OPENAI_DEPLOYMENT

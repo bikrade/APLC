@@ -7,6 +7,38 @@ async function enterLocalApp(page: import('@playwright/test').Page): Promise<voi
   await expect(page.getByText('Choose a Subject')).toBeVisible()
 }
 
+async function saveAndReturnHome(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByRole('button', { name: /save progress and go to home/i }).click()
+  await page.getByRole('button', { name: /save & exit/i }).click()
+  await expect(page.getByText('Choose a Subject')).toBeVisible()
+}
+
+async function startFreshGuidedSession(page: import('@playwright/test').Page, subject: 'Multiplication' | 'Division' | 'Reading') {
+  const card = page.locator('.subject-card').filter({ hasText: subject })
+  const resetButton = card.getByRole('button', { name: /reset and start fresh/i })
+  if (await resetButton.isVisible()) {
+    await resetButton.click()
+  } else {
+    await card.getByRole('button', { name: /^guided$/i }).click()
+    await card.getByRole('button', { name: /start guided/i }).click()
+  }
+}
+
+async function getSessionSignature(page: import('@playwright/test').Page, subject: 'Multiplication' | 'Division' | 'Reading'): Promise<string> {
+  await expect(page.locator('.question-counter')).toContainText(subject === 'Reading' ? /Question 1 of 7/i : /Question 1 of 12/i)
+  if (subject === 'Reading') {
+    await expect(page.locator('.reading-page-title')).toBeVisible()
+    await expect(page.locator('.reading-page-paragraph').first()).toBeVisible()
+    const title = (await page.locator('.reading-page-title').innerText()).trim()
+    const body = (await page.locator('.reading-page-paragraph').first().innerText()).trim()
+    return `${title}|${body.slice(0, 180)}`
+  }
+
+  const prompt = (await page.locator('.question-prompt').innerText()).trim()
+  expect(prompt.length).toBeGreaterThan(0)
+  return prompt
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test('multiplication wrong-answer flow requires retry or reveal before continuing', async ({ page }) => {
@@ -66,6 +98,8 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
 
   const readingCard = page.locator('.subject-card').filter({ hasText: 'Reading' })
   await readingCard.getByRole('button', { name: /start guided/i }).click()
+  await expect(page.locator('.meta-story-source.ai')).toContainText(/Fresh AI story generated/i)
+  await expect(page.locator('.session-warning-banner')).toHaveCount(0)
 
   await expect(page.getByText(/Question 1 of 7/i)).toBeVisible()
 
@@ -92,18 +126,18 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
   await expect(page.getByText(/Overall Reading/i)).toBeVisible()
 })
 
-test('reading start shows a visible fallback alert when a fresh AI story cannot be generated', async ({ page }) => {
+test('all subject cards generate fresh content for guided start and reset-and-fresh flows', async ({ page }) => {
   await enterLocalApp(page)
 
-  const readingCard = page.locator('.subject-card').filter({ hasText: 'Reading' })
-  const resetButton = readingCard.getByRole('button', { name: /reset and start fresh/i })
-  if (await resetButton.isVisible()) {
-    await resetButton.click()
-  } else {
-    await readingCard.getByRole('button', { name: /start guided/i }).click()
-  }
+  for (const subject of ['Multiplication', 'Division', 'Reading'] as const) {
+    await startFreshGuidedSession(page, subject)
+    const firstSignature = await getSessionSignature(page, subject)
+    await saveAndReturnHome(page)
 
-  await expect(page.getByText(/Question 1 of 7/i)).toBeVisible()
-  await expect(page.getByRole('alert')).toContainText(/Fresh AI story unavailable/i)
-  await expect(page.getByRole('alert')).toContainText(/local backup story/i)
+    await startFreshGuidedSession(page, subject)
+    const secondSignature = await getSessionSignature(page, subject)
+
+    expect(secondSignature).not.toBe(firstSignature)
+    await saveAndReturnHome(page)
+  }
 })
