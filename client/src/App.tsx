@@ -229,6 +229,8 @@ type StartSessionResponse = {
   completedAt?: string
   totalTokensUsed?: number
   difficultyLevel?: number
+  readingStorySource?: 'ai' | 'fallback'
+  readingStoryFallbackReason?: string
 }
 
 function splitReadingParagraphs(content?: string): string[] {
@@ -257,6 +259,8 @@ type HelpResponse = {
   totalTokensUsed?: number
   difficultyLevel?: number
 }
+
+type ReadingStorySource = 'ai' | 'fallback'
 
 type ReleaseChange = {
   sha: string
@@ -382,8 +386,18 @@ function ThemeToggleButton({ theme, onToggle }: { theme: ThemeMode; onToggle: ()
   )
 }
 
+function getHourInTimeZone(date: Date, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    hour12: false,
+  })
+  const hourValue = formatter.formatToParts(date).find((part) => part.type === 'hour')?.value ?? '0'
+  return Number.parseInt(hourValue, 10) || 0
+}
+
 function getGreeting(name: string): string {
-  const hour = new Date().getHours()
+  const hour = getHourInTimeZone(new Date(), PRACTICE_DAY_TIME_ZONE)
   if (hour < 12) return `Good morning, ${name}! ☀️`
   if (hour < 17) return `Good afternoon, ${name}! 🌤️`
   return `Good evening, ${name}! 🌙`
@@ -391,6 +405,7 @@ function getGreeting(name: string): string {
 
 function formatCurrentDate(): string {
   return new Date().toLocaleDateString('en-US', {
+    timeZone: PRACTICE_DAY_TIME_ZONE,
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -437,6 +452,7 @@ function formatRelativeTime(isoDate: string): string {
 function formatScoreTimestamp(isoDate?: string): string {
   if (!isoDate) return ''
   return new Date(isoDate).toLocaleString('en-US', {
+    timeZone: PRACTICE_DAY_TIME_ZONE,
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -469,6 +485,7 @@ function getSessionModeMeta(mode: SessionMode): { label: string; shortLabel: str
       description: 'Results only at the end.',
     }
   }
+
   return {
     label: 'Guided Session',
     shortLabel: 'Guided',
@@ -485,6 +502,30 @@ function formatPracticeMinutes(ms: number): string {
 function getDailyHabitTierCopy(targetMs: number): string {
   const targetMinutes = Math.max(1, Math.round(targetMs / 60000))
   return `${targetMinutes} min keeps the habit alive · 30 min strong day · 45+ min stretch`
+}
+
+const PRACTICE_DAY_TIME_ZONE = 'Asia/Singapore'
+
+function getDateKeyInTimeZone(date: Date, timeZone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = formatter.formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000'
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01'
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01'
+  return `${year}-${month}-${day}`
+}
+
+function getDateFromDateKey(dateKey: string): Date {
+  const [rawYear = '1970', rawMonth = '01', rawDay = '01'] = dateKey.split('-')
+  const year = Number.parseInt(rawYear, 10) || 1970
+  const month = Number.parseInt(rawMonth, 10) || 1
+  const day = Number.parseInt(rawDay, 10) || 1
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
 }
 
 function getSessionCoachSummary(
@@ -647,7 +688,8 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
   const cellSize = 12
   const cellGap = 4
   const dayLabelWidth = 42
-  const now = useMemo(() => new Date(), [])
+  const todayDateKey = useMemo(() => getDateKeyInTimeZone(new Date(), PRACTICE_DAY_TIME_ZONE), [])
+  const now = useMemo(() => getDateFromDateKey(todayDateKey), [todayDateKey])
 
   const windowSize = useMemo<HeatmapWindow>(() => {
     if (containerWidth <= 0) return 3
@@ -663,9 +705,9 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
 
   const { startDate, endDate } = useMemo(() => getQuarterWindowRange(windowSize, now), [windowSize, now])
   const startGridDate = new Date(startDate)
-  startGridDate.setDate(startDate.getDate() - startDate.getDay())
+  startGridDate.setUTCDate(startDate.getUTCDate() - startDate.getUTCDay())
   const endGridDate = new Date(endDate)
-  endGridDate.setDate(endDate.getDate() + (6 - endDate.getDay()))
+  endGridDate.setUTCDate(endDate.getUTCDate() + (6 - endDate.getUTCDay()))
 
   useLayoutEffect(() => {
     const updateWidth = (): void => {
@@ -694,8 +736,8 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
   const practiceByDate = useMemo(() => new Map(activityDays.map((entry) => [entry.date, entry.practiceMs])), [activityDays])
 
   const cells: { date: string; level: number; inRange: boolean; practiceMs: number }[] = []
-  for (let date = new Date(startGridDate); date <= endGridDate; date.setDate(date.getDate() + 1)) {
-    const iso = date.toISOString().slice(0, 10)
+  for (let date = new Date(startGridDate); date <= endGridDate; date.setUTCDate(date.getUTCDate() + 1)) {
+    const iso = getDateKeyInTimeZone(date, PRACTICE_DAY_TIME_ZONE)
     const practiceMs = practiceByDate.get(iso) ?? 0
     let level = 0
     if (practiceMs >= 60 * 60 * 1000) level = 4
@@ -715,7 +757,10 @@ function ActivityHeatmap({ activityDays }: { activityDays: Array<{ date: string;
   }
 
   const visibleMonths = Array.from({ length: windowSize }, (_, index) =>
-    new Date(startDate.getFullYear(), startDate.getMonth() + index, 1).toLocaleString('en-US', { month: 'short' }),
+    new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + index, 1, 12, 0, 0)).toLocaleString('en-US', {
+      month: 'short',
+      timeZone: PRACTICE_DAY_TIME_ZONE,
+    }),
   )
   const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', '']
   const trackWidth = weeks.length * cellSize + Math.max(weeks.length - 1, 0) * cellGap
@@ -839,6 +884,8 @@ function App() {
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [showReleaseNotes, setShowReleaseNotes] = useState(false)
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
+  const [readingStorySource, setReadingStorySource] = useState<ReadingStorySource | null>(null)
+  const [readingStoryFallbackReason, setReadingStoryFallbackReason] = useState('')
   const [launchState, setLaunchState] = useState<LaunchState>(null)
   const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
   const [summaryCompletedAt, setSummaryCompletedAt] = useState<string | null>(null)
@@ -1307,6 +1354,8 @@ function App() {
       setShowExitConfirm(false)
       setSummaryCompletedAt(null)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setReadingStorySource(data.readingStorySource ?? null)
+      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
       if (subject === 'Reading') {
         const introTitle = data.questions[0]?.title ?? ''
         if (readingSessionIntroTimeoutRef.current !== null) {
@@ -1323,6 +1372,8 @@ function App() {
           readingSessionIntroTimeoutRef.current = null
         }
         setReadingSessionIntroTitle('')
+        setReadingStorySource(null)
+        setReadingStoryFallbackReason('')
       }
       setStage('session')
     } catch (err) {
@@ -1386,6 +1437,8 @@ function App() {
         completedAt?: string
         totalTokensUsed?: number
         difficultyLevel?: number
+        readingStorySource?: ReadingStorySource
+        readingStoryFallbackReason?: string
       }
       setSessionId(data.sessionId)
       setSessionSubject(data.subject)
@@ -1404,6 +1457,8 @@ function App() {
       setInputState('idle')
       setShowExitConfirm(false)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setReadingStorySource(data.readingStorySource ?? null)
+      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
       setSummaryCompletedAt(data.completedAt ?? null)
       setReadingSessionIntroTitle('')
       setStage('session')
@@ -1432,6 +1487,8 @@ function App() {
         completedAt?: string
         totalTokensUsed?: number
         difficultyLevel?: number
+        readingStorySource?: ReadingStorySource
+        readingStoryFallbackReason?: string
       }
       if (data.status !== 'completed') {
         throw new Error('This session is not completed yet.')
@@ -1453,6 +1510,8 @@ function App() {
       setInputState('idle')
       setShowExitConfirm(false)
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
+      setReadingStorySource(data.readingStorySource ?? null)
+      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
       setSummaryCompletedAt(data.completedAt ?? null)
       setReadingSessionIntroTitle('')
       setStage('summary')
@@ -2489,6 +2548,16 @@ function App() {
               <div className="meta-card-value-row">
                 <span className="meta-tokens-value">🤖 {totalTokensUsed.toLocaleString()}</span>
               </div>
+              {isReadingSession && readingStorySource && (
+                <>
+                  <span className={`meta-story-source ${readingStorySource}`}>
+                    {readingStorySource === 'ai' ? 'Fresh AI story generated' : 'Local fallback story used'}
+                  </span>
+                  {readingStorySource === 'fallback' && readingStoryFallbackReason && (
+                    <span className="meta-story-source-detail">{readingStoryFallbackReason}</span>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Card 4: Home */}
@@ -2811,7 +2880,14 @@ function App() {
             <div className="reading-session-intro-card">
               <p className="reading-session-intro-kicker">Today&apos;s Story</p>
               <p className="reading-session-intro-title">{readingSessionIntroTitle}</p>
-              <p className="reading-session-intro-copy">The reading session is ready. Start with page 1 and settle into the story.</p>
+              <p className="reading-session-intro-copy">
+                {readingStorySource === 'fallback'
+                  ? 'The AI story generator did not complete, so this session is using the local backup story. Start with page 1 when ready.'
+                  : 'The reading session is ready. Start with page 1 and settle into the story.'}
+              </p>
+              {readingStorySource === 'fallback' && readingStoryFallbackReason && (
+                <p className="reading-session-intro-note">Reason: {readingStoryFallbackReason}</p>
+              )}
             </div>
           </div>
         )}

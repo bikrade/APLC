@@ -3393,6 +3393,30 @@
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.5px;
+.meta-story-source {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.meta-story-source.ai {
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
+}
+.meta-story-source.fallback {
+  background: rgba(245, 158, 11, 0.14);
+  color: #9a3412;
+}
+.meta-story-source-detail {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
 }
 
 .meta-timer-subvalue {
@@ -3400,6 +3424,12 @@
   font-weight: 700;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+.reading-session-intro-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
 }
 
 .meta-timer-subvalue-label,
@@ -4346,6 +4376,14 @@ html[data-theme='dark'] .reading-session-intro-card {
 
 html[data-theme='dark'] .reading-session-intro-kicker {
   color: #93c5fd;
+}
+html[data-theme='dark'] .meta-story-source.ai {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+html[data-theme='dark'] .meta-story-source.fallback {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fed7aa;
 }
 
 html[data-theme='dark'] .summary-target-badge {

@@ -1,5 +1,5 @@
 import { generateReadingStoryAI, isOpenAIConfigured } from './openai'
-import type { GeneratedReadingStory, Question, QuestionState, ReadingQuizItem, ReadingVocabularyItem, SessionRecord } from './types'
+import type { GeneratedReadingStory, Question, QuestionState, ReadingQuizItem, ReadingStorySource, ReadingVocabularyItem, SessionRecord } from './types'
 
 const READING_TARGET_MIN_WPM = 120
 const READING_TARGET_MAX_WPM = 140
@@ -36,6 +36,12 @@ type ReadingStory = {
   keywordGroups: string[][]
   quizItems: ReadingQuizItem[]
   vocabularyFocus: ReadingVocabularyItem[]
+}
+
+export type ReadingQuestionSetResult = {
+  questions: Question[]
+  storySource: ReadingStorySource
+  fallbackReason?: string
 }
 
 export type ReadingGenerationProfile = {
@@ -494,6 +500,14 @@ export function createReadingQuestionSet(sessionId: string): Question[] {
   return [...pages, createSummaryQuestion(`q-${story.pages.length + 1}`, story)]
 }
 
+function createFallbackReadingQuestionSet(sessionId: string, fallbackReason?: string): ReadingQuestionSetResult {
+  return {
+    questions: createReadingQuestionSet(sessionId),
+    storySource: 'fallback',
+    ...(fallbackReason ? { fallbackReason } : {}),
+  }
+}
+
 export function readingPageWordTargets() {
   return {
     min: READING_PAGE_WORD_MIN,
@@ -590,7 +604,7 @@ export async function createReadingQuestionSetAsync(
     performanceSummary?: string
     priorTitles?: string[]
   },
-): Promise<Question[]> {
+): Promise<ReadingQuestionSetResult> {
   if (isOpenAIConfigured()) {
     try {
       const story = await generateReadingStoryAI({
@@ -600,13 +614,20 @@ export async function createReadingQuestionSetAsync(
         priorTitles: options?.priorTitles ?? [],
         timeoutMs: READING_AI_TIMEOUT_MS,
       })
-      return toQuestionSet(story)
+      return {
+        questions: toQuestionSet(story),
+        storySource: 'ai',
+      }
     } catch (error) {
       console.warn('OpenAI reading story generation failed, using fallback generator:', error)
+      return createFallbackReadingQuestionSet(
+        sessionId,
+        error instanceof Error ? error.message : 'AI story generation failed.',
+      )
     }
   }
 
-  return createReadingQuestionSet(sessionId)
+  return createFallbackReadingQuestionSet(sessionId, 'AI story generation is not configured for this environment.')
 }
 
 export function getReadingGenerationInputs(allSessions: SessionRecord[]): ReadingGenerationProfile & { priorTitles: string[] } {

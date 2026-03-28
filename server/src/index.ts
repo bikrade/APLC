@@ -45,7 +45,8 @@ const port = Number(process.env.PORT || 3001)
 const clientDistDir = path.resolve(process.cwd(), '../client/dist')
 const clientIndexPath = path.join(clientDistDir, 'index.html')
 const USER_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i
-const SESSION_ID_PATTERN = /^\d{8}-\d{6}-(Multiplication|Division|Reading)$/
+const SESSION_ID_PATTERN = /^\d{8}-\d{6}(?:\d{3})?-(Multiplication|Division|Reading)$/
+const PRACTICE_DAY_TIME_ZONE = 'Asia/Singapore'
 type RateLimitEntry = {
   count: number
   resetAt: number
@@ -271,6 +272,10 @@ function getSessionPracticeDate(session: SessionRecord): Date {
   return new Date(session.completedAt ?? session.lastActivityAt ?? session.startedAt)
 }
 
+function getPracticeDayTimeZone(): string {
+  return PRACTICE_DAY_TIME_ZONE
+}
+
 function createSessionId(subject: Subject, date = new Date()): string {
   const year = String(date.getFullYear())
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -278,7 +283,8 @@ function createSessionId(subject: Subject, date = new Date()): string {
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
   const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${year}${month}${day}-${hours}${minutes}${seconds}-${subject}`
+  const milliseconds = String(date.getMilliseconds()).padStart(3, '0')
+  return `${year}${month}${day}-${hours}${minutes}${seconds}${milliseconds}-${subject}`
 }
 
 type InsightPayload = {
@@ -502,7 +508,14 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
       ...(session.readingPerformanceSummary ? { performanceSummary: session.readingPerformanceSummary } : {}),
       ...(session.readingPriorTitles ? { priorTitles: session.readingPriorTitles } : {}),
     }
-    session.questions = await createReadingQuestionSetAsync(session.id, readingOptions)
+    const readingSet = await createReadingQuestionSetAsync(session.id, readingOptions)
+    session.questions = readingSet.questions
+    session.readingStorySource = readingSet.storySource
+    if (readingSet.storySource === 'fallback') {
+      session.readingStoryFallbackReason = readingSet.fallbackReason ?? 'The local backup story generator was used for this session.'
+    } else {
+      delete session.readingStoryFallbackReason
+    }
     const readingStats = flushCallStats()
     if (readingStats.length > 0) {
       session.totalTokensUsed = (session.totalTokensUsed ?? 0) + readingStats.reduce((sum, stat) => sum + stat.totalTokens, 0)
@@ -519,6 +532,26 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
     }
   }
   await persistSession(session)
+}
+
+function ensureReadingStoryMetadata(session: SessionRecord): void {
+  if (session.subject !== 'Reading' || session.readingStorySource) {
+    return
+  }
+
+  const hasReadingPages = session.questions.some((question) => question.kind === 'reading-page')
+  if (!hasReadingPages) {
+    return
+  }
+
+  if ((session.totalTokensUsed ?? 0) > 0) {
+    session.readingStorySource = 'ai'
+    delete session.readingStoryFallbackReason
+    return
+  }
+
+  session.readingStorySource = 'fallback'
+  session.readingStoryFallbackReason = 'This saved session appears to be using the local backup story instead of a fresh AI-generated passage.'
 }
 
 function clampDifficultyLevel(level: number): number {
@@ -1370,7 +1403,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   ])
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
     const learningCoach = buildLearningCoach(allSessions)
-    const learnerTimeZone = profile.timezone || 'UTC'
+    const learnerTimeZone = getPracticeDayTimeZone()
     const todayIso = getDateKeyInTimeZone(new Date(), learnerTimeZone)
     const yesterdayIso = shiftDateKeyInTimeZone(todayIso, -1, learnerTimeZone)
 
@@ -1639,6 +1672,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     existingActiveSession.adaptiveQuestionsSinceChange = existingActiveSession.adaptiveQuestionsSinceChange ?? 0
     sessions.set(sessionKey(userId, existingActiveSession.id), existingActiveSession)
     await ensureQuestionGenerated(existingActiveSession, existingActiveSession.currentIndex)
+    ensureReadingStoryMetadata(existingActiveSession)
     res.json({
       sessionId: existingActiveSession.id,
       subject: existingActiveSession.subject,
@@ -1649,6 +1683,8 @@ app.post('/session/start', asyncHandler(async (req, res) => {
       currentIndex: existingActiveSession.currentIndex,
       totalTokensUsed: existingActiveSession.totalTokensUsed,
       difficultyLevel: existingActiveSession.adaptiveDifficultyLevel ?? 3,
+      readingStorySource: existingActiveSession.readingStorySource,
+      readingStoryFallbackReason: existingActiveSession.readingStoryFallbackReason,
     })
     return
   }
@@ -1718,6 +1754,8 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     currentIndex: session.currentIndex,
     totalTokensUsed: session.totalTokensUsed,
     difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
+    readingStorySource: session.readingStorySource,
+    readingStoryFallbackReason: session.readingStoryFallbackReason,
   })
 }))
 
@@ -1751,6 +1789,7 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
     sessions.set(key, session)
   }
   await ensureQuestionGenerated(session, session.currentIndex)
+  ensureReadingStoryMetadata(session)
   res.json({
     sessionId: session.id,
     subject: session.subject,
@@ -1762,6 +1801,8 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
     answers: session.answers,
     totalTokensUsed: session.totalTokensUsed,
     difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
+    readingStorySource: session.readingStorySource,
+    readingStoryFallbackReason: session.readingStoryFallbackReason,
   })
 }))
 

@@ -18,7 +18,7 @@ import {
 const DATA_ROOT = path.resolve(process.env.DATA_ROOT || path.resolve(__dirname, '../../data'))
 const USERS_ROOT = path.join(DATA_ROOT, 'users')
 const USER_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i
-const SESSION_ID_PATTERN = /^\d{8}-\d{6}-(Multiplication|Division|Reading)$/
+const SESSION_ID_PATTERN = /^\d{8}-\d{6}(?:\d{3})?-(Multiplication|Division|Reading)$/
 const useBlob = isBlobStorageConfigured()
 
 function assertSafeUserId(userId: string): void {

@@ -2,6 +2,7 @@ export type Subject = 'Multiplication' | 'Division' | 'Reading'
 export type SessionMode = 'guided' | 'quiz'
 export type QuestionType = 'decimal' | 'fraction' | 'percentage' | 'mixed' | 'reading_page' | 'reading_summary' | 'reading_quiz'
 export type QuestionKind = 'math' | 'reading-page' | 'reading-summary' | 'reading-quiz'
+export type ReadingStorySource = 'ai' | 'fallback'
 
 export interface ReadingQuizItem {
   id: string
@@ -89,6 +90,8 @@ export interface SessionRecord {
   readingChallengeTier?: 'core' | 'stretch' | 'advanced'
   readingPerformanceSummary?: string
   readingPriorTitles?: string[]
+  readingStorySource?: ReadingStorySource
+  readingStoryFallbackReason?: string
 }
 
 export interface UserProfile {

@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionRecord } from '../src/types'
@@ -445,15 +447,18 @@ describe('APLC backend', () => {
     delete process.env.OPENAI_API_KEY
 
     try {
-      const questions = await createReadingQuestionSetAsync('20260328-101500-Reading', {
+      const readingSet = await createReadingQuestionSetAsync('20260328-101500-Reading', {
         challengeTier: 'stretch',
         performanceSummary: 'Recent reading is steady.',
         priorTitles: [],
       })
+      const questions = readingSet.questions
 
       expect(questions).toHaveLength(7)
       expect(questions[0]?.kind).toBe('reading-page')
       expect(questions[6]?.kind).toBe('reading-summary')
+      expect(readingSet.storySource).toBe('fallback')
+      expect(readingSet.fallbackReason).toContain('not configured')
     } finally {
       process.env.NODE_ENV = originalNodeEnv
       if (originalApiKey === undefined) {
@@ -484,16 +489,19 @@ describe('APLC backend', () => {
 
     try {
       const readingModule = await import('../src/reading')
-      const questions = await readingModule.createReadingQuestionSetAsync('20260328-101501-Reading', {
+      const readingSet = await readingModule.createReadingQuestionSetAsync('20260328-101501-Reading', {
         challengeTier: 'core',
         performanceSummary: 'Recent reading is steady.',
         priorTitles: [],
       })
+      const questions = readingSet.questions
 
       expect(questions).toHaveLength(7)
       expect(questions[0]?.kind).toBe('reading-page')
       expect(questions[0]?.title).toBeTruthy()
       expect(questions[6]?.kind).toBe('reading-summary')
+      expect(readingSet.storySource).toBe('fallback')
+      expect(readingSet.fallbackReason).toContain('timed out')
     } finally {
       vi.doUnmock('../src/openai')
       vi.resetModules()
@@ -573,6 +581,8 @@ describe('APLC backend', () => {
 
       expect(response.status).toBe(200)
       expect(response.body.totalTokensUsed).toBe(1023)
+      expect(response.body.readingStorySource).toBe('ai')
+      expect(response.body.readingStoryFallbackReason).toBeUndefined()
       expect(response.body.questions[0].title).toBe('The Lantern Above Riverstone Crossing')
     } finally {
       vi.unstubAllGlobals()
@@ -581,6 +591,54 @@ describe('APLC backend', () => {
       delete process.env.AZURE_OPENAI_API_KEY
       delete process.env.AZURE_OPENAI_DEPLOYMENT
       delete process.env.AZURE_OPENAI_API_VERSION
+    }
+  })
+
+  test('reading session start reports fallback reason when AI is unavailable', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const response = await request(ctx.app)
+      .post('/session/start')
+      .send({ userId: 'adi', subject: 'Reading' })
+
+    expect(response.status).toBe(200)
+    expect(response.body.totalTokensUsed).toBe(0)
+    expect(response.body.readingStorySource).toBe('fallback')
+    expect(String(response.body.readingStoryFallbackReason ?? '')).toContain('not configured')
+  })
+
+  test('starting a fresh reading session within the same second produces a new session id', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-28T10:15:30.000Z'))
+
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    try {
+      const firstStart = await request(ctx.app)
+        .post('/session/start')
+        .send({ userId: 'adi', subject: 'Reading', sessionMode: 'guided' })
+
+      expect(firstStart.status).toBe(200)
+
+      const firstSessionId = String(firstStart.body.sessionId)
+      const deleteResponse = await request(ctx.app)
+        .delete(`/sessions/in-progress/adi/${firstSessionId}`)
+
+      expect(deleteResponse.status).toBe(200)
+
+      vi.setSystemTime(new Date('2026-03-28T10:15:30.120Z'))
+
+      const secondStart = await request(ctx.app)
+        .post('/session/start')
+        .send({ userId: 'adi', subject: 'Reading', sessionMode: 'guided' })
+
+      expect(secondStart.status).toBe(200)
+      expect(String(secondStart.body.sessionId)).not.toBe(firstSessionId)
+      expect(String(secondStart.body.sessionId)).toMatch(/^\d{8}-\d{9}-Reading$/)
+    } finally {
+      vi.useRealTimers()
     }
   })
 
@@ -820,6 +878,67 @@ describe('APLC backend', () => {
       targetMs: 15 * 60 * 1000,
       todayMs: 45 * 60 * 1000,
       yesterdayMs: 35 * 60 * 1000,
+    })
+  })
+
+  test('dashboard uses Singapore midnight boundaries even if the stored profile timezone is wrong', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-23T02:00:00.000Z'))
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    await fs.writeFile(
+      path.join(ctx.dataRoot, 'users', 'adi', 'profile.json'),
+      JSON.stringify({
+        id: 'adi',
+        name: 'Adi',
+        learningFocus: 'Decimals, fractions & percentages',
+        timezone: 'UTC',
+        notes: 'Test profile',
+      }, null, 2),
+      'utf8',
+    )
+
+    const makeSession = (id: string, startedAt: string, elapsedMs: number): SessionRecord => ({
+      id,
+      userId: 'adi',
+      subject: 'Multiplication',
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      currentIndex: 1,
+      questions: [{
+        id: 'q-1',
+        prompt: '2 × 3',
+        type: 'decimal',
+        answer: 6,
+        tolerance: 0.01,
+        helpSteps: [],
+        explanation: '',
+        generated: true,
+      }],
+      answers: [{
+        questionId: 'q-1',
+        questionIndex: 0,
+        completed: true,
+        usedHelp: false,
+        usedReveal: false,
+        elapsedMs,
+        isCorrect: true,
+      }],
+      totalTokensUsed: 0,
+    })
+
+    await writeSession(ctx.dataRoot, makeSession('20260322-150000-Multiplication', '2026-03-22T15:00:00.000Z', 10 * 60 * 1000))
+    await writeSession(ctx.dataRoot, makeSession('20260322-173000-Multiplication', '2026-03-22T17:30:00.000Z', 25 * 60 * 1000))
+
+    const res = await request(ctx.app).get('/dashboard/adi')
+
+    expect(res.status).toBe(200)
+    expect(res.body.dailyPractice).toEqual({
+      targetMs: 15 * 60 * 1000,
+      todayMs: 25 * 60 * 1000,
+      yesterdayMs: 10 * 60 * 1000,
     })
   })
 
