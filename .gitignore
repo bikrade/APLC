@@ -8,6 +8,7 @@ server/dist/
 .tmp/
 playwright-report/
 test-results/
+client/public/release-info.json
 
 # Logs
 npm-debug.log*

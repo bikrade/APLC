@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
-const outputPath = path.join(repoRoot, 'client', 'src', 'generated', 'releaseInfo.ts')
+const outputPath = path.join(repoRoot, 'client', 'public', 'release-info.json')
 
 function runGit(command) {
   return execSync(command, {
@@ -63,7 +63,7 @@ function buildReleaseInfo() {
 }
 
 function writeReleaseInfoFile(releaseInfo) {
-  const contents = `export const releaseInfo = ${JSON.stringify(releaseInfo, null, 2)} as const\n`
+  const contents = `${JSON.stringify(releaseInfo, null, 2)}\n`
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
   fs.writeFileSync(outputPath, contents)
 }
@@ -72,12 +72,7 @@ try {
   writeReleaseInfoFile(buildReleaseInfo())
   console.log(`release info synced -> ${path.relative(repoRoot, outputPath)}`)
 } catch (error) {
-  if (fs.existsSync(outputPath)) {
-    console.warn('release info sync skipped, using existing file')
-    process.exit(0)
-  }
-
-  console.error('failed to generate release info')
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
+  console.warn('release info sync skipped, using runtime fallback')
+  console.warn(error instanceof Error ? error.message : String(error))
+  process.exit(0)
 }

@@ -3,7 +3,6 @@ import confetti from 'canvas-confetti'
 import 'katex/dist/katex.min.css'
 import './App.css'
 import { formatMs, getAccuracyColor, getQuestionTypeBadge, renderMath } from './lib/sessionUi'
-import { releaseInfo } from './generated/releaseInfo'
 
 declare global {
   interface Window {
@@ -259,6 +258,22 @@ type HelpResponse = {
   difficultyLevel?: number
 }
 
+type ReleaseChange = {
+  sha: string
+  date: string
+  summary: string
+}
+
+type ReleaseInfo = {
+  version: string
+  channel: string
+  displayLabel: string
+  shortSha: string
+  releaseDate: string
+  headline: string
+  changes: ReleaseChange[]
+}
+
 type RevealResponse = {
   correctAnswer: number
   explanation: string
@@ -277,6 +292,28 @@ const BUILD_TIME_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as str
 const AUTH_TOKEN_KEY = 'aplc_auth_token'
 const THEME_STORAGE_KEY = 'aplc_theme'
 const SESSION_TARGET_ACCURACY = 80 // target % for the session
+const RELEASE_INFO_URL = `${import.meta.env.BASE_URL}release-info.json`
+const DEFAULT_RELEASE_INFO: ReleaseInfo = {
+  version: '0.0.0',
+  channel: 'beta',
+  displayLabel: 'Local build',
+  shortSha: 'local',
+  releaseDate: '',
+  headline: 'Latest release info unavailable',
+  changes: [],
+}
+
+function isReleaseInfo(value: unknown): value is ReleaseInfo {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<ReleaseInfo>
+  return (
+    typeof candidate.displayLabel === 'string'
+    && typeof candidate.shortSha === 'string'
+    && typeof candidate.headline === 'string'
+    && typeof candidate.releaseDate === 'string'
+    && Array.isArray(candidate.changes)
+  )
+}
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') {
@@ -759,6 +796,7 @@ function ScoreGauge({ correctCount, answeredCount }: { correctCount: number; ans
 function App() {
   const googleButtonRef = useRef<HTMLDivElement>(null)
   const releasePopoverRef = useRef<HTMLDivElement>(null)
+  const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo>(DEFAULT_RELEASE_INFO)
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const [stage, setStage] = useState<Stage>('login')
   const [users, setUsers] = useState<User[]>([])
@@ -851,6 +889,29 @@ function App() {
     }
 
     void loadAuthConfig()
+  }, [])
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadReleaseInfo = async (): Promise<void> => {
+      try {
+        const res = await fetch(RELEASE_INFO_URL, { cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as unknown
+        if (isActive && isReleaseInfo(data)) {
+          setReleaseInfo(data)
+        }
+      } catch {
+        // The release badge falls back to local metadata when the generated asset is absent.
+      }
+    }
+
+    void loadReleaseInfo()
+
+    return () => {
+      isActive = false
+    }
   }, [])
 
   const selectedUserName = useMemo(() => {
