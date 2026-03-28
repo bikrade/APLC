@@ -154,9 +154,61 @@ app.use(express.json({ limit: '32kb' }))
 app.use(requestLogger)
 
 const sessions = new Map<string, SessionRecord>()
+const SESSION_SNAPSHOT_TTL_MS = 5_000
+type SessionSnapshotCacheEntry = {
+  value?: SessionRecord[]
+  expiresAt: number
+  promise?: Promise<SessionRecord[]>
+}
+const sessionSnapshotCache = new Map<string, SessionSnapshotCacheEntry>()
 
 function sessionKey(userId: string, sessionId: string): string {
   return `${userId}:${sessionId}`
+}
+
+function invalidateSessionSnapshot(userId: string): void {
+  sessionSnapshotCache.delete(userId)
+}
+
+async function getAllSessionsSnapshot(userId: string): Promise<SessionRecord[]> {
+  const now = Date.now()
+  const cached = sessionSnapshotCache.get(userId)
+  if (cached?.value && cached.expiresAt > now) {
+    return cached.value
+  }
+  if (cached?.promise) {
+    return cached.promise
+  }
+
+  const promise = listAllSessions(userId)
+    .then((allSessions) => {
+      sessionSnapshotCache.set(userId, {
+        value: allSessions,
+        expiresAt: Date.now() + SESSION_SNAPSHOT_TTL_MS,
+      })
+      return allSessions
+    })
+    .catch((error) => {
+      sessionSnapshotCache.delete(userId)
+      throw error
+    })
+
+  sessionSnapshotCache.set(userId, {
+    expiresAt: now + SESSION_SNAPSHOT_TTL_MS,
+    promise,
+  })
+
+  return promise
+}
+
+async function persistSession(session: SessionRecord): Promise<void> {
+  invalidateSessionSnapshot(session.userId)
+  await saveSession(session)
+}
+
+async function removePersistedSession(userId: string, sessionId: string): Promise<void> {
+  invalidateSessionSnapshot(userId)
+  await deleteSession(userId, sessionId)
 }
 
 function getQuestionAt(session: SessionRecord, index: number) {
@@ -466,7 +518,7 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
       session.recentTemplateIds = [...recentTemplateIds, generated.templateId].slice(-30)
     }
   }
-  await saveSession(session)
+  await persistSession(session)
 }
 
 function clampDifficultyLevel(level: number): number {
@@ -1238,9 +1290,9 @@ function formatInsightsText(payload: InsightPayload): string {
   return JSON.stringify(payload, null, 2)
 }
 
-async function refreshInsightsFile(userId: string): Promise<InsightPayload> {
-  const allSessions = await listAllSessions(userId)
-  const payload = buildInsightsPayloadFromSessions(allSessions)
+async function refreshInsightsFile(userId: string, allSessions?: SessionRecord[]): Promise<InsightPayload> {
+  const sessionList = allSessions ?? await getAllSessionsSnapshot(userId)
+  const payload = buildInsightsPayloadFromSessions(sessionList)
   if (payload.hasEnoughData) {
     await saveInsightsText(userId, formatInsightsText(payload))
   }
@@ -1312,8 +1364,10 @@ app.use('/session/:userId/:sessionId/answer', rateLimit('answer', 120, 60 * 1000
 // Dashboard stats endpoint
 app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
   const userId = getRouteParam(req, 'userId')
-    const profile = await readUserProfile(userId)
-  const allSessions = await listAllSessions(userId)
+  const [profile, allSessions] = await Promise.all([
+    readUserProfile(userId),
+    getAllSessionsSnapshot(userId),
+  ])
     const completedSessions = allSessions.filter((s) => s.status === 'completed')
     const learningCoach = buildLearningCoach(allSessions)
     const learnerTimeZone = profile.timezone || 'UTC'
@@ -1486,7 +1540,7 @@ app.get('/dashboard/:userId', asyncHandler(async (req, res) => {
 // In-progress session endpoint
 app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
   const userId = getRouteParam(req, 'userId')
-  const allSessions = await listAllSessions(userId)
+  const allSessions = await getAllSessionsSnapshot(userId)
     const activeSessions = allSessions
       .filter((s) => s.status === 'active')
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
@@ -1514,7 +1568,7 @@ app.get('/sessions/in-progress/:userId', asyncHandler(async (req, res) => {
 app.delete('/sessions/in-progress/:userId/:sessionId', asyncHandler(async (req, res) => {
   const userId = getRouteParam(req, 'userId')
   const sessionId = getRouteParam(req, 'sessionId')
-  const session = (await listAllSessions(userId)).find((candidate) => candidate.id === sessionId)
+  const session = (await getAllSessionsSnapshot(userId)).find((candidate) => candidate.id === sessionId)
 
   if (!session) {
     res.status(404).json({ error: 'Session not found.' })
@@ -1527,7 +1581,7 @@ app.delete('/sessions/in-progress/:userId/:sessionId', asyncHandler(async (req, 
   }
 
   sessions.delete(sessionKey(userId, sessionId))
-  await deleteSession(userId, sessionId)
+  await removePersistedSession(userId, sessionId)
 
   res.json({
     deleted: true,
@@ -1538,7 +1592,8 @@ app.delete('/sessions/in-progress/:userId/:sessionId', asyncHandler(async (req, 
 
 app.get('/insights/:userId', asyncHandler(async (req, res) => {
   const userId = getRouteParam(req, 'userId')
-  const refreshed = await refreshInsightsFile(userId)
+  const allSessions = await getAllSessionsSnapshot(userId)
+  const refreshed = await refreshInsightsFile(userId, allSessions)
   res.json(refreshed)
 }))
 
@@ -1573,6 +1628,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   }
   await deleteLegacySessionFiles(userId)
   const existingActiveSession = await pruneActiveSessionsForSubject(userId, requestedSubject)
+  invalidateSessionSnapshot(userId)
   if (existingActiveSession) {
     existingActiveSession.sessionMode = getSessionMode(existingActiveSession)
     existingActiveSession.adaptiveDifficultyLevel = clampDifficultyLevelForSubject(
@@ -1596,7 +1652,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     })
     return
   }
-  const allSessions = await listAllSessions(userId)
+  const allSessions = await getAllSessionsSnapshot(userId)
   const startingDifficultyLevel = computeAdaptiveDifficultyLevel(allSessions, requestedSubject)
   const readingGenerationInputs = requestedSubject === 'Reading'
     ? getReadingGenerationInputs(allSessions)
@@ -1647,7 +1703,7 @@ app.post('/session/start', asyncHandler(async (req, res) => {
   }
   await ensureQuestionGenerated(session, 0)
   sessions.set(sessionKey(userId, session.id), session)
-  await saveSession(session)
+  await persistSession(session)
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
   }
@@ -1756,7 +1812,7 @@ app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
   const hintStats = flushCallStats()
   session.totalTokensUsed = (session.totalTokensUsed ?? 0) + hintStats.reduce((sum, s) => sum + s.totalTokens, 0)
   session.lastActivityAt = new Date().toISOString()
-  await saveSession(session)
+  await persistSession(session)
   res.json({
     helpSteps,
     helpSource,
@@ -1811,7 +1867,7 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     session.completedAt = new Date().toISOString()
   }
   session.lastActivityAt = session.completedAt ?? new Date().toISOString()
-  await saveSession(session)
+  await persistSession(session)
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
   }
@@ -1883,7 +1939,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
         session.completedAt = new Date().toISOString()
       }
       session.lastActivityAt = session.completedAt ?? new Date().toISOString()
-      await saveSession(session)
+      await persistSession(session)
       res.json({
         isCorrect: true,
         explanation: 'Nice focus. Move on to the next page when you are ready.',
@@ -1949,7 +2005,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     session.status = 'completed'
     session.completedAt = new Date().toISOString()
     session.lastActivityAt = session.completedAt
-    await saveSession(session)
+    await persistSession(session)
     await refreshInsightsFile(userId)
     res.json({
       isCorrect: state.isCorrect,
@@ -2025,7 +2081,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     }
   }
   session.lastActivityAt = session.completedAt ?? new Date().toISOString()
-  await saveSession(session)
+  await persistSession(session)
   let explanation: string
   if (sessionMode === 'quiz') {
     explanation = isCorrect
@@ -2048,7 +2104,7 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
   // Accumulate tokens from explanation generation
   const explStats = flushCallStats()
   session.totalTokensUsed = (session.totalTokensUsed ?? 0) + explStats.reduce((sum, s) => sum + s.totalTokens, 0)
-  await saveSession(session)
+  await persistSession(session)
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
   }
@@ -2089,7 +2145,7 @@ app.post('/session/:userId/:sessionId/pause', asyncHandler(async (req, res) => {
   }
   answerState.elapsedMs = Math.max(0, elapsedMs)
   session.lastActivityAt = new Date().toISOString()
-  await saveSession(session)
+  await persistSession(session)
   res.json({ ok: true, answers: session.answers })
 }))
 
@@ -2142,6 +2198,7 @@ app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
 
 export function resetInMemoryState(): void {
   sessions.clear()
+  sessionSnapshotCache.clear()
   rateLimitStore.clear()
 }
 

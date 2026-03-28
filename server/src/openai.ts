@@ -1,6 +1,7 @@
 import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, ReadingQuizItem, ReadingVocabularyItem } from './types'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
+const DEFAULT_AZURE_OPENAI_API_VERSION = '2024-10-21'
 const DEFAULT_MODEL = 'gpt-4o-mini'
 const DEFAULT_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 15000))
 const READING_REQUEST_MAX_TOKENS = 2600
@@ -16,13 +17,63 @@ export function flushCallStats(): OpenAICallStat[] {
   return callStats.splice(0)
 }
 
-function getOpenAIConfig() {
+type ProviderConfig =
+  | {
+      provider: 'openai'
+      apiKey: string
+      model: string
+      url: string
+      headers: Record<string, string>
+      bodyExtras: Record<string, string>
+    }
+  | {
+      provider: 'azure-openai'
+      apiKey: string
+      model: string
+      url: string
+      headers: Record<string, string>
+      bodyExtras: Record<string, never>
+    }
+
+function normalizeEndpoint(endpoint: string): string {
+  return endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint
+}
+
+function getOpenAIConfig(): ProviderConfig {
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT
+  const azureApiKey = process.env.AZURE_OPENAI_API_KEY
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT
+  if (azureEndpoint && azureApiKey && azureDeployment) {
+    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_OPENAI_API_VERSION
+    return {
+      provider: 'azure-openai',
+      apiKey: azureApiKey,
+      model: azureDeployment,
+      url: `${normalizeEndpoint(azureEndpoint)}/openai/deployments/${azureDeployment}/chat/completions?api-version=${apiVersion}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': azureApiKey,
+      },
+      bodyExtras: {},
+    }
+  }
+
   const apiKey = process.env.OPENAI_API_KEY
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL
   if (!apiKey) {
-    throw new Error('OpenAI is not configured. Missing OPENAI_API_KEY.')
+    throw new Error('OpenAI is not configured. Missing OPENAI_API_KEY or Azure OpenAI settings.')
   }
-  return { apiKey, model }
+  return {
+    provider: 'openai',
+    apiKey,
+    model,
+    url: OPENAI_API_URL,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    bodyExtras: { model },
+  }
 }
 
 async function chatCompletion(
@@ -39,13 +90,10 @@ async function chatCompletion(
 
   let response: Response
   try {
-    response = await fetch(OPENAI_API_URL, {
+    response = await fetch(cfg.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({ model: cfg.model, messages, max_tokens: maxTokens, temperature }),
+      headers: cfg.headers,
+      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature, ...cfg.bodyExtras }),
       signal: controller.signal,
     })
   } catch (error) {
@@ -96,7 +144,13 @@ async function chatCompletion(
 }
 
 export function isOpenAIConfigured(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY)
+  return Boolean(
+    process.env.OPENAI_API_KEY || (
+      process.env.AZURE_OPENAI_ENDPOINT &&
+      process.env.AZURE_OPENAI_API_KEY &&
+      process.env.AZURE_OPENAI_DEPLOYMENT
+    ),
+  )
 }
 
 function stripMarkdownFence(content: string): string {

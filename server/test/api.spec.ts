@@ -510,6 +510,80 @@ describe('APLC backend', () => {
     }
   })
 
+  test('reading session start counts Azure OpenAI story tokens when Azure config is active', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const originalFetch = globalThis.fetch
+    process.env.AZURE_OPENAI_ENDPOINT = 'https://example.openai.azure.com'
+    process.env.AZURE_OPENAI_API_KEY = 'azure-test-key'
+    process.env.AZURE_OPENAI_DEPLOYMENT = 'gpt-4o-mini'
+    process.env.AZURE_OPENAI_API_VERSION = '2024-10-21'
+
+    const repeatedWords = Array.from({ length: 310 }, (_, index) => `word${index + 1}`).join(' ')
+    const storyPayload = {
+      title: 'The Lantern Above Riverstone Crossing',
+      pages: [
+        repeatedWords,
+        repeatedWords,
+        repeatedWords,
+        repeatedWords,
+      ],
+      summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
+      summaryGuidance: 'Include the setting, the main problem, the key choices Adi noticed, and how the conflict was resolved.',
+      keywordGroups: [
+        ['lantern', 'light'],
+        ['bridge', 'crossing'],
+        ['storm', 'wind'],
+        ['signal', 'warning'],
+        ['river', 'water'],
+        ['friend', 'helper'],
+        ['decision', 'choice'],
+        ['resolution', 'ending'],
+      ],
+      vocabularyFocus: [
+        { term: 'lantern', studentFriendlyMeaning: 'a portable light', contextClue: 'It glowed in the dark above the bridge.' },
+        { term: 'crossing', studentFriendlyMeaning: 'a place to move across', contextClue: 'The village used the crossing to get over the river.' },
+        { term: 'signal', studentFriendlyMeaning: 'a sign or message', contextClue: 'The signal told everyone to slow down.' },
+        { term: 'resolved', studentFriendlyMeaning: 'solved or settled', contextClue: 'The problem was resolved when the path was made safe again.' },
+      ],
+      quizItems: [
+        { id: 'reading-quiz-1', prompt: 'Why did the characters look at the lantern?', options: ['It warned them', 'It was broken', 'It was hidden', 'It was noisy'], correctOption: 0 },
+        { id: 'reading-quiz-2', prompt: 'What was the main setting?', options: ['A beach', 'A river crossing', 'A market', 'A classroom'], correctOption: 1 },
+        { id: 'reading-quiz-3', prompt: 'What theme fits best?', options: ['Luck solves everything', 'Rules never matter', 'Careful courage helps others', 'Winning is most important'], correctOption: 2 },
+        { id: 'reading-quiz-4', prompt: 'What helped solve the problem?', options: ['Ignoring the warning', 'Running away', 'Using the signal wisely', 'Waiting for sunrise'], correctOption: 2 },
+      ],
+    }
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      id: 'azure-chat-1',
+      model: 'gpt-4o-mini',
+      choices: [{ message: { content: JSON.stringify(storyPayload) }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 611, completion_tokens: 412, total_tokens: 1023 },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch)
+
+    try {
+      const response = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject: 'Reading',
+      })
+
+      expect(response.status).toBe(200)
+      expect(response.body.totalTokensUsed).toBe(1023)
+      expect(response.body.questions[0].title).toBe('The Lantern Above Riverstone Crossing')
+    } finally {
+      vi.unstubAllGlobals()
+      globalThis.fetch = originalFetch
+      delete process.env.AZURE_OPENAI_ENDPOINT
+      delete process.env.AZURE_OPENAI_API_KEY
+      delete process.env.AZURE_OPENAI_DEPLOYMENT
+      delete process.env.AZURE_OPENAI_API_VERSION
+    }
+  })
+
   test('raises reading generation challenge when recent reading is both fast and accurate', () => {
     const makeReadingSession = (id: string, startedAt: string, readingScore: number, comprehensionScore: number, readingWpm: number): SessionRecord => ({
       id,

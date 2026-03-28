@@ -2043,14 +2043,16 @@ function App() {
                       </div>
                     )}
                     <button
-                      className={`btn-start-subject ${isBlockingHomeLaunch && !isLaunchingThisSubject ? 'quiet-disabled' : ''}`}
+                      className={`btn-start-subject ${isLaunchingThisSubject ? 'launching' : ''} ${isBlockingHomeLaunch && !isLaunchingThisSubject ? 'quiet-disabled' : ''}`}
                       onClick={() => requestStartSession(subject.id)}
                       disabled={isBusy}
                     >
                       {isLaunchingThisSubject ? (
                         <>
-                          <span className="loading-dots"><span /><span /><span /></span>
-                          <span>
+                          <span className="btn-start-subject-spinner" aria-hidden="true">
+                            <span className="loading-dots"><span /><span /><span /></span>
+                          </span>
+                          <span className="btn-start-subject-copy">
                             {launchState?.mode === 'resume'
                               ? 'Opening Session...'
                               : subject.id === 'Reading'

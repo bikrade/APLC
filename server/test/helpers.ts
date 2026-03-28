@@ -46,6 +46,10 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestAppC
     process.env.AUTH_SESSION_SECRET = ''
   }
   process.env.OPENAI_API_KEY = ''
+  delete process.env.AZURE_OPENAI_ENDPOINT
+  delete process.env.AZURE_OPENAI_API_KEY
+  delete process.env.AZURE_OPENAI_DEPLOYMENT
+  delete process.env.AZURE_OPENAI_API_VERSION
 
   const serverModule = await import('../src/index')
   const authModule = await import('../src/auth')
@@ -67,6 +71,10 @@ export async function setupTestApp(options: SetupOptions = {}): Promise<TestAppC
       delete process.env.AUTH_ALLOWED_EMAIL
       delete process.env.AUTH_SESSION_SECRET
       delete process.env.OPENAI_API_KEY
+      delete process.env.AZURE_OPENAI_ENDPOINT
+      delete process.env.AZURE_OPENAI_API_KEY
+      delete process.env.AZURE_OPENAI_DEPLOYMENT
+      delete process.env.AZURE_OPENAI_API_VERSION
       await fs.rm(tempRoot, { recursive: true, force: true })
     },
   }

@@ -1671,6 +1671,32 @@
   transform: none;
 }
 
+.btn-start-subject.launching,
+.btn-start-subject.launching:disabled {
+  background: linear-gradient(135deg, #0f2743 0%, #14385d 52%, #1f5f82 100%);
+  border: 1px solid rgba(148, 197, 255, 0.24);
+  box-shadow: 0 6px 0 #0b2238, 0 16px 28px rgba(12, 38, 62, 0.26);
+  color: #f7fbff;
+  opacity: 1;
+}
+
+.btn-start-subject-spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  flex-shrink: 0;
+}
+
+.btn-start-subject-copy {
+  display: inline-flex;
+  align-items: center;
+}
+
 .btn-start-subject.quiet-disabled:disabled {
   background: linear-gradient(135deg, #58cc02, #46a302);
   box-shadow: 0 4px 0 #3a8a00;
@@ -4029,6 +4055,39 @@ html[data-theme='dark'] .btn-start-fresh {
   background: linear-gradient(180deg, rgba(12, 74, 110, 0.42) 0%, rgba(8, 47, 73, 0.52) 100%);
   border-color: rgba(103, 232, 249, 0.26);
   color: #a5f3fc;
+}
+
+html[data-theme='dark'] .btn-start-subject.launching,
+html[data-theme='dark'] .btn-start-subject.launching:disabled {
+  background: linear-gradient(135deg, #16253c 0%, #17314f 52%, #1b4a69 100%);
+  border-color: rgba(125, 211, 252, 0.24);
+  box-shadow: 0 6px 0 #0f1d30, 0 18px 32px rgba(2, 8, 23, 0.34);
+  color: #e6f4ff;
+}
+
+html[data-theme='dark'] .btn-start-subject-spinner {
+  background: rgba(143, 220, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme='dark'] .btn-start-subject.launching .loading-dots span {
+  background: #8fdcff;
+}
+
+html[data-theme='light'] .btn-start-subject.launching,
+html[data-theme='light'] .btn-start-subject.launching:disabled {
+  background: linear-gradient(135deg, #e7eef7 0%, #d8e4f2 52%, #c7d8ea 100%);
+  border-color: rgba(41, 84, 122, 0.18);
+  box-shadow: 0 6px 0 #a8b8ca, 0 16px 24px rgba(82, 102, 128, 0.16);
+  color: #f8fbff;
+}
+
+html[data-theme='light'] .btn-start-subject.launching .btn-start-subject-spinner {
+  background: rgba(18, 58, 92, 0.14);
+}
+
+html[data-theme='light'] .btn-start-subject.launching .loading-dots span {
+  background: #ffffff;
 }
 
 html[data-theme='dark'] .btn-start-fresh:hover:not(:disabled) {
