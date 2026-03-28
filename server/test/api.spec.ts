@@ -68,6 +68,20 @@ describe('APLC backend', () => {
     expect(response.headers['cross-origin-opener-policy']).toBe('same-origin-allow-popups')
   })
 
+  test('serves readiness JSON without being swallowed by the SPA fallback', async () => {
+    const ctx = await setupTestApp()
+    cleanupCurrent = ctx.cleanup
+
+    const response = await request(ctx.app).get('/ready')
+
+    expect(response.status).toBe(200)
+    expect(response.headers['content-type']).toContain('application/json')
+    expect(response.body.status).toBe('ready')
+    expect(response.body.service).toBe('aplc-server')
+    expect(typeof response.body.pendingReadingJobs).toBe('number')
+    expect(typeof response.body.openAIConfigured).toBe('boolean')
+  })
+
   test('lists local users when Google auth is disabled', async () => {
     const ctx = await setupTestApp()
     cleanupCurrent = ctx.cleanup
@@ -246,6 +260,63 @@ describe('APLC backend', () => {
     const inProgress = await request(ctx.app).get('/sessions/in-progress/adi')
     expect(inProgress.status).toBe(200)
     expect(inProgress.body.sessions).toHaveLength(0)
+  })
+
+  test('starts a reading session in pending mode, rejects interactions until ready, and becomes ready on poll', async () => {
+    const originalWaitMs = process.env.READING_START_RESPONSE_WAIT_MS
+    process.env.READING_START_RESPONSE_WAIT_MS = '1'
+
+    vi.doMock('../src/reading', async () => {
+      const actual = await vi.importActual<typeof import('../src/reading')>('../src/reading')
+      return {
+        ...actual,
+        createReadingQuestionSetAsync: vi.fn(async (...args: Parameters<typeof actual.createReadingQuestionSetAsync>) => {
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          return actual.createReadingQuestionSetAsync(...args)
+        }),
+      }
+    })
+
+    try {
+      const ctx = await setupTestApp()
+      cleanupCurrent = ctx.cleanup
+
+      const start = await request(ctx.app).post('/session/start').send({
+        userId: 'adi',
+        subject: 'Reading',
+      })
+      const sessionId = start.body.sessionId as string
+
+      expect(start.status).toBe(200)
+      expect(['queued', 'planning', 'writing']).toContain(start.body.readingGenerationStatus)
+      expect(start.body.questions[0].prompt).toBe('')
+
+      const pendingAnswer = await request(ctx.app)
+        .post(`/session/adi/${sessionId}/answer`)
+        .send({ questionIndex: 0, answer: '', elapsedMs: 1000 })
+
+      expect(pendingAnswer.status).toBe(409)
+      expect(pendingAnswer.body.code).toBe('READING_GENERATION_PENDING')
+
+      let poll = await request(ctx.app).get(`/session/adi/${sessionId}`)
+      for (let attempt = 0; attempt < 10 && poll.body.readingGenerationStatus !== 'ready'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 40))
+        poll = await request(ctx.app).get(`/session/adi/${sessionId}`)
+      }
+
+      expect(poll.status).toBe(200)
+      expect(poll.body.readingGenerationStatus).toBe('ready')
+      expect(poll.body.questions[0].kind).toBe('reading-page')
+      expect(String(poll.body.questions[0].prompt ?? '')).not.toBe('')
+      expect(['ai', 'fallback']).toContain(poll.body.readingStorySource)
+    } finally {
+      vi.doUnmock('../src/reading')
+      if (originalWaitMs === undefined) {
+        delete process.env.READING_START_RESPONSE_WAIT_MS
+      } else {
+        process.env.READING_START_RESPONSE_WAIT_MS = originalWaitMs
+      }
+    }
   })
 
   test('builds reading pages at book-like length for middle-grade readers', () => {
@@ -563,7 +634,7 @@ describe('APLC backend', () => {
     const repeatedWords = Array.from({ length: 310 }, (_, index) => `word${index + 1}`).join(' ')
     const storyPayload = {
       title: 'The Lantern Above Riverstone Crossing',
-      pages: [repeatedWords, repeatedWords, repeatedWords, repeatedWords],
+      pages: [repeatedWords, repeatedWords, repeatedWords, repeatedWords, repeatedWords, repeatedWords],
       summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
       summaryGuidance: 'Include the setting, the main problem, the key evidence, and the resolution.',
       keywordGroups: [
@@ -589,19 +660,48 @@ describe('APLC backend', () => {
         { id: 'reading-quiz-4', prompt: 'What helped solve the problem?', options: ['Ignoring the warning', 'Running away', 'Using the signal wisely', 'Waiting for sunrise'], correctOption: 2 },
       ],
     }
+    const planPayload = {
+      title: storyPayload.title,
+      pagePlans: storyPayload.pages.map((page, index) => `Page ${index + 1}: ${page.split(' ').slice(0, 24).join(' ')}`),
+      summaryPrompt: storyPayload.summaryPrompt,
+      summaryGuidance: storyPayload.summaryGuidance,
+      keywordGroups: storyPayload.keywordGroups,
+      vocabularyFocus: storyPayload.vocabularyFocus,
+      quizItems: storyPayload.quizItems,
+    }
 
     let fetchCalls = 0
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
       fetchCalls += 1
       if (fetchCalls === 1) {
         throw new Error('OpenAI request timed out after 12000ms.')
       }
 
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages?: Array<{ role?: string; content?: string }>
+      }
+      const userContent = body.messages?.find((message) => message.role === 'user')?.content ?? ''
+      const requestedPages = userContent.match(/Requested pages:\s*(\d+)\s*-\s*(\d+)/i)
+
+      if (requestedPages) {
+        const startPage = Number(requestedPages[1]) - 1
+        const endPage = Number(requestedPages[2])
+        return new Response(JSON.stringify({
+          id: `openai-pages-${fetchCalls}`,
+          model: 'gpt-4o-mini',
+          choices: [{ message: { content: JSON.stringify({ pages: storyPayload.pages.slice(startPage, endPage) }) }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 110, completion_tokens: 160, total_tokens: 270 },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
       return new Response(JSON.stringify({
         id: 'openai-chat-2',
         model: 'gpt-4o-mini',
-        choices: [{ message: { content: JSON.stringify(storyPayload) }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 620, completion_tokens: 410, total_tokens: 1030 },
+        choices: [{ message: { content: JSON.stringify(planPayload) }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 120, completion_tokens: 100, total_tokens: 220 },
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -615,7 +715,7 @@ describe('APLC backend', () => {
       })
 
       expect(response.status).toBe(200)
-      expect(fetchCalls).toBe(2)
+      expect(fetchCalls).toBe(5)
       expect(response.body.totalTokensUsed).toBe(1030)
       expect(response.body.readingStorySource).toBe('ai')
       expect(response.body.readingStoryFallbackReason).toBeUndefined()
@@ -734,6 +834,8 @@ describe('APLC backend', () => {
         repeatedWords,
         repeatedWords,
         repeatedWords,
+        repeatedWords,
+        repeatedWords,
       ],
       summaryPrompt: 'In about 100 words, explain the core summary of the story you just read.',
       summaryGuidance: 'Include the setting, the main problem, the key choices Adi noticed, and how the conflict was resolved.',
@@ -760,16 +862,49 @@ describe('APLC backend', () => {
         { id: 'reading-quiz-4', prompt: 'What helped solve the problem?', options: ['Ignoring the warning', 'Running away', 'Using the signal wisely', 'Waiting for sunrise'], correctOption: 2 },
       ],
     }
+    const planPayload = {
+      title: storyPayload.title,
+      pagePlans: storyPayload.pages.map((page, index) => `Page ${index + 1}: ${page.split(' ').slice(0, 24).join(' ')}`),
+      summaryPrompt: storyPayload.summaryPrompt,
+      summaryGuidance: storyPayload.summaryGuidance,
+      keywordGroups: storyPayload.keywordGroups,
+      vocabularyFocus: storyPayload.vocabularyFocus,
+      quizItems: storyPayload.quizItems,
+    }
 
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      id: 'azure-chat-1',
-      model: 'gpt-4o-mini',
-      choices: [{ message: { content: JSON.stringify(storyPayload) }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 611, completion_tokens: 412, total_tokens: 1023 },
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })) as typeof fetch)
+    let fetchCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
+      fetchCalls += 1
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages?: Array<{ role?: string; content?: string }>
+      }
+      const userContent = body.messages?.find((message) => message.role === 'user')?.content ?? ''
+      const requestedPages = userContent.match(/Requested pages:\s*(\d+)\s*-\s*(\d+)/i)
+
+      if (requestedPages) {
+        const startPage = Number(requestedPages[1]) - 1
+        const endPage = Number(requestedPages[2])
+        return new Response(JSON.stringify({
+          id: `azure-pages-${fetchCalls}`,
+          model: 'gpt-4o-mini',
+          choices: [{ message: { content: JSON.stringify({ pages: storyPayload.pages.slice(startPage, endPage) }) }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 101, completion_tokens: 170, total_tokens: 271 },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      return new Response(JSON.stringify({
+        id: 'azure-plan-1',
+        model: 'gpt-4o-mini',
+        choices: [{ message: { content: JSON.stringify(planPayload) }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 111, completion_tokens: 99, total_tokens: 210 },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as typeof fetch)
 
     try {
       const response = await request(ctx.app).post('/session/start').send({
@@ -778,6 +913,7 @@ describe('APLC backend', () => {
       })
 
       expect(response.status).toBe(200)
+      expect(fetchCalls).toBe(4)
       expect(response.body.totalTokensUsed).toBe(1023)
       expect(response.body.readingStorySource).toBe('ai')
       expect(response.body.readingStoryFallbackReason).toBeUndefined()

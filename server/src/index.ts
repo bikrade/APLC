@@ -14,6 +14,7 @@ import {
   deleteSession,
   deleteLegacySessionFiles,
   listAllSessions,
+  listRecentSessions,
   pruneActiveSessionsForSubject,
   readSession,
   readUserProfile,
@@ -22,7 +23,7 @@ import {
   userProfileExists,
   saveSession,
 } from './storage'
-import type { QuestionState, SessionMode, SessionRecord, Subject } from './types'
+import type { QuestionState, ReadingGenerationStatus, SessionMode, SessionRecord, Subject } from './types'
 import { createQuestionPlaceholder, generateQuestionByType, getQuestionTypeForIndex, isAnswerCorrect, parseAnswer } from './utils'
 import { generateHintSteps, generateExplanation, isOpenAIConfigured, flushCallStats } from './openai'
 import {
@@ -38,7 +39,7 @@ import {
   READING_TARGET_WPM,
   READING_WARNING_THRESHOLD_WPM,
 } from './reading'
-import { logger, requestLogger, asyncHandler } from './logger'
+import { logger, requestLogger, asyncHandler, getRequestId, telemetry, withLogContext } from './logger'
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -53,6 +54,8 @@ type RateLimitEntry = {
 }
 
 const rateLimitStore = new Map<string, RateLimitEntry>()
+const READING_START_RESPONSE_WAIT_MS = Math.max(0, Number(process.env.READING_START_RESPONSE_WAIT_MS || 5000))
+const READING_GENERATION_SLOW_WARNING_MS = Math.max(1000, Number(process.env.READING_GENERATION_SLOW_WARNING_MS || 15000))
 
 function getAllowedOrigins(): Set<string> {
   const origins = new Set<string>([
@@ -155,6 +158,7 @@ app.use(express.json({ limit: '32kb' }))
 app.use(requestLogger)
 
 const sessions = new Map<string, SessionRecord>()
+const readingGenerationJobs = new Map<string, Promise<void>>()
 const SESSION_SNAPSHOT_TTL_MS = 5_000
 type SessionSnapshotCacheEntry = {
   value?: SessionRecord[]
@@ -171,6 +175,53 @@ function invalidateSessionSnapshot(userId: string): void {
   sessionSnapshotCache.delete(userId)
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function isReadingGenerationPendingStatus(status?: ReadingGenerationStatus): boolean {
+  return status === 'queued' || status === 'planning' || status === 'writing'
+}
+
+function getReadingGenerationErrorCode(error: unknown): string {
+  if (error instanceof Error) {
+    const code = (error as Error & { code?: string }).code
+    if (typeof code === 'string' && code.trim()) {
+      return code
+    }
+    const message = error.message.toLowerCase()
+    if (message.includes('timed out')) return 'READING_GENERATION_TIMEOUT'
+    if (message.includes('429') || message.includes('rate limit')) return 'READING_GENERATION_RATE_LIMIT'
+    if (message.includes('non-json') || message.includes('invalid')) return 'READING_GENERATION_INVALID_RESPONSE'
+  }
+  return 'READING_GENERATION_FAILED'
+}
+
+function toClientSessionPayload(session: SessionRecord) {
+  return {
+    sessionId: session.id,
+    subject: session.subject,
+    sessionMode: getSessionMode(session),
+    status: session.status,
+    completedAt: session.completedAt,
+    questionCount: session.questions.length,
+    questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
+    answers: session.answers,
+    currentIndex: session.currentIndex,
+    totalTokensUsed: session.totalTokensUsed,
+    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
+    readingStorySource: session.readingStorySource,
+    readingStoryFallbackReason: session.readingStoryFallbackReason,
+    readingGenerationStatus: session.readingGenerationStatus,
+    readingGenerationErrorCode: session.readingGenerationErrorCode,
+    readingGenerationErrorMessage: session.readingGenerationErrorMessage,
+    readingGenerationChunkCount: session.readingGenerationChunkCount,
+    readingGenerationChunksCompleted: session.readingGenerationChunksCompleted,
+  }
+}
+
 async function getAllSessionsSnapshot(userId: string): Promise<SessionRecord[]> {
   const now = Date.now()
   const cached = sessionSnapshotCache.get(userId)
@@ -181,8 +232,14 @@ async function getAllSessionsSnapshot(userId: string): Promise<SessionRecord[]> 
     return cached.promise
   }
 
+  const snapshotStartedAt = Date.now()
   const promise = listAllSessions(userId)
     .then((allSessions) => {
+      const durationMs = Date.now() - snapshotStartedAt
+      if (durationMs >= 1000) {
+        logger.warn('Session snapshot load was slow', { userId, durationMs, sessionCount: allSessions.length })
+      }
+      telemetry.trackMetric('session.snapshot.load_ms', durationMs, { userId })
       sessionSnapshotCache.set(userId, {
         value: allSessions,
         expiresAt: Date.now() + SESSION_SNAPSHOT_TTL_MS,
@@ -205,6 +262,117 @@ async function getAllSessionsSnapshot(userId: string): Promise<SessionRecord[]> 
 async function persistSession(session: SessionRecord): Promise<void> {
   invalidateSessionSnapshot(session.userId)
   await saveSession(session)
+}
+
+function queueReadingGeneration(session: SessionRecord): Promise<void> {
+  const key = sessionKey(session.userId, session.id)
+  const existing = readingGenerationJobs.get(key)
+  if (existing) {
+    return existing
+  }
+
+  session.readingGenerationRequestId = session.readingGenerationRequestId ?? getRequestId() ?? `reading-${session.id}`
+  session.readingGenerationStatus = session.readingGenerationStatus && session.readingGenerationStatus !== 'failed'
+    ? session.readingGenerationStatus
+    : 'queued'
+  session.readingGenerationStartedAt = session.readingGenerationStartedAt ?? new Date().toISOString()
+  session.readingGenerationChunkCount = session.readingGenerationChunkCount ?? 4
+  session.readingGenerationChunksCompleted = session.readingGenerationChunksCompleted ?? 0
+
+  const startedAt = Date.now()
+  const job = withLogContext({
+    requestId: session.readingGenerationRequestId,
+    sessionId: session.id,
+    userId: session.userId,
+    subject: session.subject,
+  }, async () => {
+    try {
+      logger.info('Reading generation queued', {
+        status: session.readingGenerationStatus,
+        priorTitleCount: session.readingPriorTitles?.length ?? 0,
+      })
+      flushCallStats()
+      session.readingGenerationStatus = 'planning'
+      await persistSession(session)
+
+      const readingSet = await createReadingQuestionSetAsync(session.id, {
+        ...(session.readingChallengeTier ? { challengeTier: session.readingChallengeTier } : {}),
+        ...(session.readingPerformanceSummary ? { performanceSummary: session.readingPerformanceSummary } : {}),
+        ...(session.readingPriorTitles ? { priorTitles: session.readingPriorTitles } : {}),
+      })
+
+      session.questions = readingSet.questions
+      session.readingStorySource = readingSet.storySource
+      session.readingGenerationStatus = 'ready'
+      if (typeof session.readingGenerationChunkCount === 'number') {
+        session.readingGenerationChunksCompleted = session.readingGenerationChunkCount
+      }
+      session.readingGenerationCompletedAt = new Date().toISOString()
+      delete session.readingGenerationErrorCode
+      delete session.readingGenerationErrorMessage
+      if (readingSet.storySource === 'fallback') {
+        session.readingStoryFallbackReason = readingSet.fallbackReason ?? 'The local backup story generator was used for this session.'
+      } else {
+        delete session.readingStoryFallbackReason
+      }
+
+      const readingStats = flushCallStats()
+      if (readingStats.length > 0) {
+        session.totalTokensUsed = (session.totalTokensUsed ?? 0) + readingStats.reduce((sum, stat) => sum + stat.totalTokens, 0)
+      }
+      const durationMs = Date.now() - startedAt
+      if (durationMs >= READING_GENERATION_SLOW_WARNING_MS) {
+        logger.warn('Reading generation completed slowly', {
+          durationMs,
+          storySource: session.readingStorySource,
+          tokenCount: session.totalTokensUsed,
+        })
+      } else {
+        logger.info('Reading generation completed', {
+          durationMs,
+          storySource: session.readingStorySource,
+          tokenCount: session.totalTokensUsed,
+        })
+      }
+      telemetry.trackMetric('reading.generation.duration_ms', durationMs, {
+        storySource: session.readingStorySource ?? 'unknown',
+      })
+      await persistSession(session)
+    } catch (error) {
+      session.readingGenerationStatus = 'failed'
+      session.readingGenerationCompletedAt = new Date().toISOString()
+      session.readingGenerationErrorCode = getReadingGenerationErrorCode(error)
+      session.readingGenerationErrorMessage = error instanceof Error ? error.message : 'Reading generation failed.'
+      logger.error('Reading generation failed', {
+        durationMs: Date.now() - startedAt,
+        error,
+        errorCode: session.readingGenerationErrorCode,
+      })
+      telemetry.trackException(error, { feature: 'reading-generation', errorCode: session.readingGenerationErrorCode })
+      await persistSession(session)
+    } finally {
+      readingGenerationJobs.delete(key)
+    }
+  })
+
+  readingGenerationJobs.set(key, job)
+  return job
+}
+
+async function waitForReadingGenerationWindow(session: SessionRecord, waitMs: number): Promise<void> {
+  if (waitMs <= 0) {
+    return
+  }
+
+  const job = readingGenerationJobs.get(sessionKey(session.userId, session.id))
+  if (!job) {
+    return
+  }
+
+  await Promise.race([
+    job,
+    sleep(waitMs),
+  ])
 }
 
 async function removePersistedSession(userId: string, sessionId: string): Promise<void> {
@@ -502,23 +670,8 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
   }
 
   if (session.subject === 'Reading') {
-    flushCallStats()
-    const readingOptions = {
-      ...(session.readingChallengeTier ? { challengeTier: session.readingChallengeTier } : {}),
-      ...(session.readingPerformanceSummary ? { performanceSummary: session.readingPerformanceSummary } : {}),
-      ...(session.readingPriorTitles ? { priorTitles: session.readingPriorTitles } : {}),
-    }
-    const readingSet = await createReadingQuestionSetAsync(session.id, readingOptions)
-    session.questions = readingSet.questions
-    session.readingStorySource = readingSet.storySource
-    if (readingSet.storySource === 'fallback') {
-      session.readingStoryFallbackReason = readingSet.fallbackReason ?? 'The local backup story generator was used for this session.'
-    } else {
-      delete session.readingStoryFallbackReason
-    }
-    const readingStats = flushCallStats()
-    if (readingStats.length > 0) {
-      session.totalTokensUsed = (session.totalTokensUsed ?? 0) + readingStats.reduce((sum, stat) => sum + stat.totalTokens, 0)
+    if (session.readingGenerationStatus !== 'ready') {
+      void queueReadingGeneration(session)
     }
   } else {
     const recentTemplateIds = session.recentTemplateIds ?? []
@@ -536,6 +689,10 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
 
 function ensureReadingStoryMetadata(session: SessionRecord): void {
   if (session.subject !== 'Reading' || session.readingStorySource) {
+    return
+  }
+
+  if (isReadingGenerationPendingStatus(session.readingGenerationStatus)) {
     return
   }
 
@@ -1673,23 +1830,15 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     sessions.set(sessionKey(userId, existingActiveSession.id), existingActiveSession)
     await ensureQuestionGenerated(existingActiveSession, existingActiveSession.currentIndex)
     ensureReadingStoryMetadata(existingActiveSession)
-    res.json({
-      sessionId: existingActiveSession.id,
-      subject: existingActiveSession.subject,
-      sessionMode: getSessionMode(existingActiveSession),
-      questionCount: existingActiveSession.questions.length,
-      questions: existingActiveSession.questions.map((question, idx) => toClientQuestion(question, idx)),
-      answers: existingActiveSession.answers,
-      currentIndex: existingActiveSession.currentIndex,
-      totalTokensUsed: existingActiveSession.totalTokensUsed,
-      difficultyLevel: existingActiveSession.adaptiveDifficultyLevel ?? 3,
-      readingStorySource: existingActiveSession.readingStorySource,
-      readingStoryFallbackReason: existingActiveSession.readingStoryFallbackReason,
-    })
+    res.json(toClientSessionPayload(existingActiveSession))
     return
   }
-  const allSessions = await getAllSessionsSnapshot(userId)
-  const startingDifficultyLevel = computeAdaptiveDifficultyLevel(allSessions, requestedSubject)
+  const allSessions = requestedSubject === 'Reading'
+    ? await listRecentSessions(userId, 18)
+    : await getAllSessionsSnapshot(userId)
+  const startingDifficultyLevel = requestedSubject === 'Reading'
+    ? 3
+    : computeAdaptiveDifficultyLevel(allSessions, requestedSubject)
   const readingGenerationInputs = requestedSubject === 'Reading'
     ? getReadingGenerationInputs(allSessions)
     : null
@@ -1714,6 +1863,8 @@ app.post('/session/start', asyncHandler(async (req, res) => {
     attemptCount: 0,
   }))
 
+  const requestId = getRequestId()
+
   const session: SessionRecord = {
     id: createSessionId(requestedSubject),
     userId,
@@ -1734,29 +1885,27 @@ app.post('/session/start', asyncHandler(async (req, res) => {
           readingChallengeTier: readingGenerationInputs.challengeTier,
           readingPerformanceSummary: readingGenerationInputs.performanceSummary,
           readingPriorTitles: readingGenerationInputs.priorTitles,
+          readingGenerationStatus: 'queued' as const,
+          readingGenerationChunkCount: 4,
+          readingGenerationChunksCompleted: 0,
+          ...(requestId ? { readingGenerationRequestId: requestId } : {}),
         }
       : {}),
   }
-  await ensureQuestionGenerated(session, 0)
   sessions.set(sessionKey(userId, session.id), session)
   await persistSession(session)
+  if (requestedSubject === 'Reading') {
+    void queueReadingGeneration(session)
+    await waitForReadingGenerationWindow(session, READING_START_RESPONSE_WAIT_MS)
+  } else {
+    await ensureQuestionGenerated(session, 0)
+    await persistSession(session)
+  }
   if (session.status === 'completed') {
     await refreshInsightsFile(userId)
   }
   logger.info('Session started', { userId, sessionId: session.id, subject: requestedSubject })
-  res.json({
-    sessionId: session.id,
-    subject: session.subject,
-    sessionMode: getSessionMode(session),
-    questionCount: session.questions.length,
-    questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
-    answers,
-    currentIndex: session.currentIndex,
-    totalTokensUsed: session.totalTokensUsed,
-    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
-    readingStorySource: session.readingStorySource,
-    readingStoryFallbackReason: session.readingStoryFallbackReason,
-  })
+  res.json(toClientSessionPayload(session))
 }))
 
 app.get('/users', asyncHandler(async (_req, res) => {
@@ -1790,20 +1939,7 @@ app.get('/session/:userId/:sessionId', asyncHandler(async (req, res) => {
   }
   await ensureQuestionGenerated(session, session.currentIndex)
   ensureReadingStoryMetadata(session)
-  res.json({
-    sessionId: session.id,
-    subject: session.subject,
-    sessionMode: getSessionMode(session),
-    status: session.status,
-    completedAt: session.completedAt,
-    currentIndex: session.currentIndex,
-    questions: session.questions.map((question, idx) => toClientQuestion(question, idx)),
-    answers: session.answers,
-    totalTokensUsed: session.totalTokensUsed,
-    difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
-    readingStorySource: session.readingStorySource,
-    readingStoryFallbackReason: session.readingStoryFallbackReason,
-  })
+  res.json(toClientSessionPayload(session))
 }))
 
 app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
@@ -1827,6 +1963,13 @@ app.post('/session/:userId/:sessionId/help', asyncHandler(async (req, res) => {
     return
   }
   await ensureQuestionGenerated(session, questionIndex)
+  if (session.subject === 'Reading' && isReadingGenerationPendingStatus(session.readingGenerationStatus)) {
+    res.status(409).json({
+      error: 'Reading story is still being prepared. Please wait a moment and try again.',
+      code: 'READING_GENERATION_PENDING',
+    })
+    return
+  }
   const hydratedQuestion = getQuestionAt(session, questionIndex)
   if (!hydratedQuestion) {
     res.status(404).json({ error: 'Question not found' })
@@ -1883,6 +2026,13 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     return
   }
   await ensureQuestionGenerated(session, questionIndex)
+  if (session.subject === 'Reading' && isReadingGenerationPendingStatus(session.readingGenerationStatus)) {
+    res.status(409).json({
+      error: 'Reading story is still being prepared. Please wait a moment and try again.',
+      code: 'READING_GENERATION_PENDING',
+    })
+    return
+  }
   const hydratedQuestion = getQuestionAt(session, questionIndex)
   if (!hydratedQuestion) {
     res.status(404).json({ error: 'Question not found' })
@@ -1949,6 +2099,13 @@ app.post('/session/:userId/:sessionId/answer', asyncHandler(async (req, res) => 
     return
   }
   await ensureQuestionGenerated(session, questionIndex)
+  if (session.subject === 'Reading' && isReadingGenerationPendingStatus(session.readingGenerationStatus)) {
+    res.status(409).json({
+      error: 'Reading story is still being prepared. Please wait a moment and try again.',
+      code: 'READING_GENERATION_PENDING',
+    })
+    return
+  }
   const hydratedQuestion = getQuestionAt(session, questionIndex)
   if (!hydratedQuestion) {
     res.status(404).json({ error: 'Question not found' })
@@ -2194,6 +2351,15 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'aplc-server' })
 })
 
+app.get('/ready', (_req, res) => {
+  res.json({
+    status: 'ready',
+    service: 'aplc-server',
+    pendingReadingJobs: readingGenerationJobs.size,
+    openAIConfigured: isOpenAIConfigured(),
+  })
+})
+
 app.get('/config/openai', (_req, res) => {
   res.json({ configured: isOpenAIConfigured() })
 })
@@ -2204,6 +2370,27 @@ app.get('/config/auth', noStore, (_req, res) => {
     googleClientId: getPublicGoogleClientId(),
   })
 })
+
+function registerProcessHandlers(): void {
+  const processWithGuard = process as NodeJS.Process & { __aplcProcessHandlersRegistered?: boolean }
+  if (processWithGuard.__aplcProcessHandlersRegistered) {
+    return
+  }
+
+  processWithGuard.__aplcProcessHandlersRegistered = true
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled promise rejection', { reason })
+    telemetry.trackException(reason, { source: 'process.unhandledRejection' })
+  })
+
+  process.on('uncaughtException', (error) => {
+    logger.error('Uncaught exception', { error })
+    telemetry.trackException(error, { source: 'process.uncaughtException' })
+  })
+}
+
+registerProcessHandlers()
 
 if (fs.existsSync(clientDistDir)) {
   app.use(express.static(clientDistDir, {
@@ -2221,7 +2408,7 @@ if (fs.existsSync(clientDistDir)) {
       res.setHeader('Cache-Control', 'public, max-age=0')
     },
   }))
-  app.get(/^\/(?!auth\/|users$|dashboard\/|sessions\/in-progress\/|insights\/|session\/|config\/|health$).*/, (_req, res) => {
+  app.get(/^\/(?!auth\/|users$|dashboard\/|sessions\/in-progress\/|insights\/|session\/|config\/|health$|ready$).*/, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store')
     res.sendFile(clientIndexPath)
   })
@@ -2298,12 +2485,4 @@ export { app }
 
 if (process.env.NODE_ENV !== 'test') {
   startServer()
-
-  process.on('unhandledRejection', (reason) => {
-    logger.error('Unhandled promise rejection', { reason: String(reason) })
-  })
-
-  process.on('uncaughtException', (error) => {
-    logger.error('Uncaught exception', { error: error.message, stack: error.stack })
-  })
 }

@@ -110,6 +110,6 @@ Rate limiting is IP-based. Exceeding the limit returns 429 with a `Retry-After` 
 ## Versioning Notes
 
 - Phase 1 is unversioned for rapid iteration.
-- App is deployed to Azure Container Apps at `https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io`.
+- App is deployed to Azure Container Apps behind the current `aplc-app` ingress hostname. Query the active hostname with `az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv` because the Azure-generated FQDN can change if the environment is recreated.
 - Same API surface serves both local development and production.
 - CORS restricted to explicit origin allowlist (localhost dev ports + configured `CORS_ALLOWED_ORIGINS`).

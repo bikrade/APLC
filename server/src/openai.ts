@@ -1,4 +1,5 @@
 import type { GeneratedReadingStory, OpenAICallStat, Question, QuestionType, ReadingQuizItem, ReadingVocabularyItem } from './types'
+import { logger, telemetry } from './logger'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_AZURE_OPENAI_API_VERSION = '2024-10-21'
@@ -7,8 +8,10 @@ const DEFAULT_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.OPENAI_REQU
 const READING_RETRY_COUNT = Math.max(0, Number(process.env.READING_AI_RETRY_COUNT || 2))
 const READING_RETRY_BASE_DELAY_MS = Math.max(100, Number(process.env.READING_AI_RETRY_BASE_DELAY_MS || 1200))
 const READING_RETRY_MAX_DELAY_MS = Math.max(READING_RETRY_BASE_DELAY_MS, Number(process.env.READING_AI_RETRY_MAX_DELAY_MS || 4000))
-const READING_REQUEST_MAX_TOKENS = 2600
 const READING_REQUEST_TEMPERATURE = 0.8
+const READING_PLAN_REQUEST_MAX_TOKENS = 1800
+const READING_PAGE_BATCH_REQUEST_MAX_TOKENS = 1200
+const READING_PAGE_BATCH_SIZE = 2
 
 const callStats: OpenAICallStat[] = []
 
@@ -24,6 +27,20 @@ function hashSeed(value: string): number {
   return hash
 }
 
+type ReadingStoryPlan = {
+  title: string
+  pagePlans: string[]
+  summaryPrompt: string
+  summaryGuidance: string
+  keywordGroups: string[][]
+  quizItems: ReadingQuizItem[]
+  vocabularyFocus: ReadingVocabularyItem[]
+}
+
+function buildMockReadingStoryObject(sessionId: string): GeneratedReadingStory {
+  return JSON.parse(buildMockReadingStoryContent(sessionId)) as GeneratedReadingStory
+}
+
 function buildMockReadingStoryContent(sessionId: string): string {
   const places = ['Harbor Reach', 'Copper Bay', 'Mistral Point', 'Moonwater Quay']
   const titles = ['Signal Lantern', 'Storm Ledger', 'Harbor Compass', 'Tide Archive']
@@ -37,7 +54,7 @@ function buildMockReadingStoryContent(sessionId: string): string {
   const helper = helpers[(seed >> 7) % helpers.length] ?? helpers[0]!
   const title = `${main} and the ${object} of ${place}`
 
-  const pages = Array.from({ length: 4 }, (_, index) => {
+  const pages = Array.from({ length: 6 }, (_, index) => {
     const stage = index + 1
     return [
       `${main} arrived at ${place} just before sunrise and noticed that the old ${object.toLowerCase()} beside the harbor wall had stopped moving again, with route marker ${sessionMarker} scratched into its brass frame.`,
@@ -88,10 +105,34 @@ function buildMockReadingStoryContent(sessionId: string): string {
 }
 
 function getMockChatCompletionContent(messages: Array<{ role: string; content: string }>, label: string): string {
+  const sessionPrompt = messages.find((message) => message.role === 'user')?.content ?? ''
+  const sessionId = sessionPrompt.match(/Session seed:\s*(.+)/)?.[1]?.trim() ?? 'mock-session'
+
   if (label === 'reading-story') {
-    const sessionPrompt = messages.find((message) => message.role === 'user')?.content ?? ''
-    const sessionId = sessionPrompt.match(/Session seed:\s*(.+)/)?.[1]?.trim() ?? 'mock-session'
     return buildMockReadingStoryContent(sessionId)
+  }
+
+  if (label === 'reading-story-plan') {
+    const story = buildMockReadingStoryObject(sessionId)
+    return JSON.stringify({
+      title: story.title,
+      pagePlans: story.pages.map((page, index) => `Page ${index + 1} should cover: ${page.split('. ').slice(0, 3).join('. ').trim()}.`),
+      summaryPrompt: story.summaryPrompt,
+      summaryGuidance: story.summaryGuidance,
+      keywordGroups: story.keywordGroups,
+      vocabularyFocus: story.vocabularyFocus,
+      quizItems: story.quizItems,
+    })
+  }
+
+  if (label === 'reading-story-pages') {
+    const story = buildMockReadingStoryObject(sessionId)
+    const rangeMatch = sessionPrompt.match(/Requested pages:\s*(\d+)\s*-\s*(\d+)/i)
+    const startIndex = rangeMatch ? Math.max(0, Number(rangeMatch[1]) - 1) : 0
+    const endIndex = rangeMatch ? Math.max(startIndex, Number(rangeMatch[2]) - 1) : Math.min(startIndex + READING_PAGE_BATCH_SIZE - 1, story.pages.length - 1)
+    return JSON.stringify({
+      pages: story.pages.slice(startIndex, endIndex + 1),
+    })
   }
 
   if (label === 'hints') {
@@ -140,6 +181,7 @@ function normalizeEndpoint(endpoint: string): string {
 }
 
 type OpenAIRequestError = Error & {
+  code?: string
   retryable?: boolean
   statusCode?: number
 }
@@ -153,6 +195,7 @@ function sleep(ms: number): Promise<void> {
 function createRetryableError(message: string, statusCode?: number): OpenAIRequestError {
   const error = new Error(message) as OpenAIRequestError
   error.retryable = true
+  error.code = statusCode === 429 ? 'OPENAI_RATE_LIMIT' : 'OPENAI_RETRYABLE'
   if (statusCode !== undefined) {
     error.statusCode = statusCode
   }
@@ -178,7 +221,7 @@ function isRetryableOpenAIError(error: unknown): error is OpenAIRequestError {
 }
 
 function getRetryDelaysMs(label: string): number[] {
-  if (label !== 'reading-story') {
+  if (!label.startsWith('reading-story')) {
     return []
   }
 
@@ -200,6 +243,15 @@ async function chatCompletionOnce(
   const controller = new AbortController()
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
 
+  logger.info('OpenAI request started', {
+    label,
+    provider: cfg.provider,
+    model: cfg.model,
+    timeoutMs,
+    messageCount: messages.length,
+    maxTokens,
+  })
+
   let response: Response
   try {
     response = await fetch(cfg.url, {
@@ -211,8 +263,11 @@ async function chatCompletionOnce(
   } catch (error) {
     const latencyMs = Date.now() - startMs
     if (controller.signal.aborted) {
-      console.error(`[OpenAI:${label}] TIMEOUT (${latencyMs}ms)`)
-      throw createRetryableError(`OpenAI request timed out after ${timeoutMs}ms.`)
+      logger.error('OpenAI request timed out', { label, latencyMs, timeoutMs })
+      telemetry.trackMetric('reading.openai.timeout_ms', latencyMs, { label })
+      const timeoutError = createRetryableError(`OpenAI request timed out after ${timeoutMs}ms.`)
+      timeoutError.code = 'OPENAI_TIMEOUT'
+      throw timeoutError
     }
     throw error
   } finally {
@@ -223,11 +278,19 @@ async function chatCompletionOnce(
   if (!response.ok) {
     const body = await response.text()
     const message = `OpenAI request failed (${response.status}): ${body}`
-    console.error(`[OpenAI:${label}] FAILED ${response.status} (${latencyMs}ms)`, body.slice(0, 200))
+    logger.error('OpenAI request failed', {
+      label,
+      statusCode: response.status,
+      latencyMs,
+      bodyPreview: body.slice(0, 200),
+    })
     if ([408, 409, 429, 500, 502, 503, 504].includes(response.status)) {
       throw createRetryableError(message, response.status)
     }
-    throw new Error(message)
+    const error = new Error(message) as OpenAIRequestError
+    error.code = response.status === 429 ? 'OPENAI_RATE_LIMIT' : 'OPENAI_REQUEST_FAILED'
+    error.statusCode = response.status
+    throw error
   }
   const data = (await response.json()) as {
     id?: string
@@ -237,10 +300,21 @@ async function chatCompletionOnce(
   }
   const usage = data.usage
   if (isOpenAIDebugLoggingEnabled()) {
-    console.log(
-      `[OpenAI:${label}] ✓ ${latencyMs}ms | model=${data.model ?? cfg.model} | tokens: prompt=${usage?.prompt_tokens ?? '?'} completion=${usage?.completion_tokens ?? '?'} total=${usage?.total_tokens ?? '?'} | finish=${data.choices?.[0]?.finish_reason ?? '?'} | id=${data.id ?? '?'}`,
-    )
+    logger.info('OpenAI request completed', {
+      label,
+      latencyMs,
+      model: data.model ?? cfg.model,
+      promptTokens: usage?.prompt_tokens ?? 0,
+      completionTokens: usage?.completion_tokens ?? 0,
+      totalTokens: usage?.total_tokens ?? 0,
+      finishReason: data.choices?.[0]?.finish_reason ?? 'unknown',
+      requestId: data.id ?? '',
+    })
   }
+  telemetry.trackMetric('openai.request.duration_ms', latencyMs, {
+    label,
+    provider: cfg.provider,
+  })
   callStats.push({
     label,
     latencyMs,
@@ -329,9 +403,19 @@ async function chatCompletion(
       }
 
       const delayMs = retryDelaysMs[attempt] ?? READING_RETRY_BASE_DELAY_MS
-      console.warn(
-        `[OpenAI:${label}] retrying after attempt ${attempt + 1} failed: ${error.message}. Waiting ${delayMs}ms before retry ${attempt + 2}.`,
-      )
+      logger.warn('OpenAI request retry scheduled', {
+        label,
+        attempt: attempt + 1,
+        nextAttempt: attempt + 2,
+        delayMs,
+        error: error.message,
+        statusCode: error.statusCode,
+      })
+      telemetry.trackEvent('openai.retry', {
+        label,
+        attempt: String(attempt + 1),
+        nextAttempt: String(attempt + 2),
+      })
       attempt += 1
       await sleep(delayMs)
     }
@@ -360,7 +444,6 @@ const READING_PAGE_COUNT = 6
 const READING_PAGE_WORD_MIN = 200
 const READING_PAGE_WORD_MAX = 250
 const READING_STORY_MIN_WORDS = READING_PAGE_COUNT * READING_PAGE_WORD_MIN
-const READING_STORY_MAX_WORDS = READING_PAGE_COUNT * READING_PAGE_WORD_MAX
 
 export async function generateHintSteps(prompt: string): Promise<string[]> {
   const content = await chatCompletion(
@@ -525,6 +608,122 @@ function parseReadingStoryFromContent(content: string): GeneratedReadingStory {
   }
 }
 
+function parseReadingStoryPlanFromContent(content: string): ReadingStoryPlan {
+  const cleaned = stripMarkdownFence(content)
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(cleaned)
+  } catch {
+    const error = new Error('OpenAI returned non-JSON response for reading plan generation.') as OpenAIRequestError
+    error.code = 'READING_PLAN_INVALID_JSON'
+    throw error
+  }
+
+  if (!raw || typeof raw !== 'object') {
+    const error = new Error('OpenAI reading plan response is not an object.') as OpenAIRequestError
+    error.code = 'READING_PLAN_INVALID_RESPONSE'
+    throw error
+  }
+
+  const item = raw as Record<string, unknown>
+  const title = String(item.title ?? '').trim()
+  const summaryPrompt = String(item.summaryPrompt ?? 'In about 100 words, explain the core summary of the story you just read.').trim()
+  const summaryGuidance = String(item.summaryGuidance ?? '').trim()
+  const pagePlans = Array.isArray(item.pagePlans) ? item.pagePlans.map(String).map((page) => page.trim()).filter(Boolean) : []
+  const keywordGroups = Array.isArray(item.keywordGroups)
+    ? item.keywordGroups
+      .map((group) => Array.isArray(group) ? group.map(String).map((keyword) => keyword.trim().toLowerCase()).filter(Boolean) : [])
+      .filter((group) => group.length > 0)
+    : []
+  const vocabularyFocus = Array.isArray(item.vocabularyFocus)
+    ? item.vocabularyFocus
+      .map((entry): ReadingVocabularyItem | null => {
+        const candidate = entry as Record<string, unknown>
+        const term = String(candidate.term ?? '').trim()
+        const studentFriendlyMeaning = String(candidate.studentFriendlyMeaning ?? '').trim()
+        const contextClue = String(candidate.contextClue ?? '').trim()
+        if (!term || !studentFriendlyMeaning || !contextClue) {
+          return null
+        }
+        return {
+          term,
+          studentFriendlyMeaning,
+          contextClue,
+        }
+      })
+      .filter((entry): entry is ReadingVocabularyItem => entry !== null)
+    : []
+  const quizItems = Array.isArray(item.quizItems)
+    ? item.quizItems
+      .map((quizItem, index): ReadingQuizItem | null => {
+        const candidate = quizItem as Record<string, unknown>
+        const prompt = String(candidate.prompt ?? '').trim()
+        const options = Array.isArray(candidate.options) ? candidate.options.map(String).map((option) => option.trim()).filter(Boolean) : []
+        const correctOption = Number(candidate.correctOption)
+        if (!prompt || options.length !== 4 || !Number.isInteger(correctOption) || correctOption < 0 || correctOption > 3) {
+          return null
+        }
+        return {
+          id: String(candidate.id ?? `reading-quiz-${index + 1}`),
+          prompt,
+          options,
+          correctOption,
+        }
+      })
+      .filter((quizItem): quizItem is ReadingQuizItem => quizItem !== null)
+    : []
+
+  if (!title) throw Object.assign(new Error('OpenAI reading plan response is missing a title.'), { code: 'READING_PLAN_INVALID_RESPONSE' })
+  if (pagePlans.length !== READING_PAGE_COUNT) throw Object.assign(new Error(`OpenAI reading plan must include exactly ${READING_PAGE_COUNT} page plans.`), { code: 'READING_PLAN_INVALID_RESPONSE' })
+  if (!summaryGuidance) throw Object.assign(new Error('OpenAI reading plan response is missing summary guidance.'), { code: 'READING_PLAN_INVALID_RESPONSE' })
+  if (keywordGroups.length < 8) throw Object.assign(new Error('OpenAI reading plan response needs at least 8 keyword groups.'), { code: 'READING_PLAN_INVALID_RESPONSE' })
+  if (vocabularyFocus.length < 4) throw Object.assign(new Error('OpenAI reading plan response needs at least 4 vocabulary focus items.'), { code: 'READING_PLAN_INVALID_RESPONSE' })
+  if (quizItems.length !== 4) throw Object.assign(new Error(`OpenAI reading plan response must include 4 quiz items, received ${quizItems.length}.`), { code: 'READING_PLAN_INVALID_RESPONSE' })
+
+  return {
+    title,
+    pagePlans,
+    summaryPrompt,
+    summaryGuidance,
+    keywordGroups,
+    vocabularyFocus,
+    quizItems,
+  }
+}
+
+function parseReadingPagesBatchFromContent(content: string, expectedCount: number): string[] {
+  const cleaned = stripMarkdownFence(content)
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(cleaned)
+  } catch {
+    throw Object.assign(new Error('OpenAI returned non-JSON response for reading page generation.'), { code: 'READING_PAGE_INVALID_JSON' })
+  }
+
+  if (!raw || typeof raw !== 'object') {
+    throw Object.assign(new Error('OpenAI reading page response is not an object.'), { code: 'READING_PAGE_INVALID_RESPONSE' })
+  }
+
+  const pages = Array.isArray((raw as Record<string, unknown>).pages)
+    ? ((raw as Record<string, unknown>).pages as unknown[]).map(String).map((page) => page.trim()).filter(Boolean)
+    : []
+
+  if (pages.length !== expectedCount) {
+    throw Object.assign(new Error(`OpenAI reading page response must include ${expectedCount} pages, received ${pages.length}.`), { code: 'READING_PAGE_INVALID_RESPONSE' })
+  }
+
+  for (const page of pages) {
+    const wordCount = countWords(page)
+    if (wordCount < Math.max(120, READING_PAGE_WORD_MIN - 40)) {
+      throw Object.assign(new Error(`OpenAI reading page response is too short (${wordCount} words).`), { code: 'READING_PAGE_TOO_SHORT' })
+    }
+  }
+
+  return pages
+}
+
 export async function generateQuestionSetAI(count: number): Promise<Question[]> {
   const content = await chatCompletion(
     [
@@ -620,20 +819,37 @@ export async function generateReadingStoryAI(input: {
     advanced: 'Write at the high end of Grade 7 IB middle-grade difficulty with deeper thematic texture, more nuanced emotional shifts, more subtext, and longer but still readable sentence structures.',
   }[input.challengeTier]
 
-  const content = await chatCompletion(
+  const timeoutMs = input.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const startedAt = Date.now()
+
+  logger.info('Reading story generation started', {
+    sessionId: input.sessionId,
+    challengeTier: input.challengeTier,
+    priorTitleCount: input.priorTitles.length,
+    timeoutMs,
+  })
+
+  const planContent = await chatCompletion(
     [
       {
         role: 'system',
         content: `You are an expert middle-grade fiction writer and reading-assessment designer creating ORIGINAL reading passages for one child learner.
 
-Write fresh, high-quality fiction for an 11-13 year old reader with atmosphere, discovery, moral courage, resourcefulness, emotional sincerity, vivid setting, narrative momentum, and thoughtful themes.
+Write a detailed STORY PLAN for a fresh, high-quality fiction passage for an 11-13 year old reader. Do NOT write the full story yet.
 
 Do NOT imitate, paraphrase, reference, echo, or mention any specific real book, author, series, plot, or copyrighted character. Invent everything from scratch in your own wording.
 
 Return ONLY a JSON object with this exact shape:
 {
   "title": "Fresh original title",
-  "pages": ["story chunk 1", "story chunk 2", "story chunk 3", "story chunk 4"],
+  "pagePlans": [
+    "Plan for page 1",
+    "Plan for page 2",
+    "Plan for page 3",
+    "Plan for page 4",
+    "Plan for page 5",
+    "Plan for page 6"
+  ],
   "summaryPrompt": "In about 100 words, explain the core summary of the story you just read.",
   "summaryGuidance": "Specific guidance for what the student should include.",
   "keywordGroups": [["keyword1", "keyword2"], ...],
@@ -651,35 +867,17 @@ Return ONLY a JSON object with this exact shape:
   ]
 }
 
-Story requirements:
-- The full story should be long enough for a serious 6-page reading session with pages that feel like a real middle-grade book: about ${READING_PAGE_WORD_MIN}-${READING_PAGE_WORD_MAX} words per final page after repagination.
-- That means roughly ${READING_STORY_MIN_WORDS}-${READING_STORY_MAX_WORDS} total words overall. Stay inside that range unless there is a compelling narrative reason to be only slightly above it.
-- Return the story in 4 to 8 natural chunks inside the pages array. Chunk lengths do not need to match. The app will repaginate the story into exactly 6 reading pages.
+Plan requirements:
+- The final passage will be exactly ${READING_PAGE_COUNT} reading pages.
+- Each page plan should describe the main scene, emotional shift, and evidence/details that will appear on that page.
+- The final written pages should land around ${READING_PAGE_WORD_MIN}-${READING_PAGE_WORD_MAX} words each.
 - The title must be fresh and not resemble any prior title supplied by the user.
-- The protagonist should feel age-appropriate for upper elementary / middle school.
-- The story should have a clear central problem, rising tension, and a meaningful resolution.
-- The prose should feel literary and engaging, not generic, flat, or template-like.
-- Avoid repetitive sentence openings and avoid formulaic chapter endings.
+- The story should have a clear central problem, rising tension, and meaningful resolution.
 - Make the summaryGuidance specific to the actual story.
-- Provide 8-12 keywordGroups, all lowercase, each group containing alternative terms/phrases that a student summary might mention.
-- Provide 4 vocabularyFocus items chosen from words or short phrases that genuinely appear in the story and can help a strong Grade 7 IB reader grow academic or literary vocabulary.
-- Each vocabularyFocus item must include a studentFriendlyMeaning and a contextClue that explains how the surrounding sentence helps reveal the meaning.
-- Choose words that are useful and transferable, not obscure decoration.
-- The 4 quizItems must check both literal understanding and inference, not just trivial recall.
-- Every quiz question must have exactly 4 plausible options with only one correct answer.
-- Build the reading like a strong teacher-made comprehension passage, not just a creative story. The text should support assessment of sequencing, cause and effect, character motivation, evidence-based inference, vocabulary in context, and theme.
-- Keep the reading load manageable for a strong Grade 7 IB learner: mostly clear syntax, purposeful paragraphing, and only a small number of richer vocabulary words that can be understood from context.
-- Do not make comprehension depend on obscure vocabulary or cultural background knowledge.
-- Include enough concrete details that a student can cite or recall evidence from the text without guessing.
-- Spread comprehension demands across the 4 quizItems: include a mix of literal retrieval, inference, author's purpose or theme, and word-or-phrase-in-context where natural.
-- Avoid trick questions, ambiguous distractors, negatives like "Which is NOT...", and answer choices that are too obviously wrong.
-- Distractors should reflect believable student misunderstandings, such as mixing up timeline events, overgeneralizing a detail, or missing a motivation shift.
-- The summaryPrompt and summaryGuidance should push for the key summary structure a teacher would want: setting, main problem, important actions, and resolution, not tiny details.
-- Prefer emotionally coherent stories with one clear through-line over stories that are clever but confusing.
-- Make sure each chunk boundary feels natural and does not break the story in a confusing place.
-
-Difficulty guidance:
-- ${challengeNotes}`,
+- Provide 8-12 keywordGroups, all lowercase.
+- Provide 4 vocabularyFocus items that will naturally appear in the final story.
+- Provide 4 quizItems that test literal understanding, inference, theme, and vocabulary/context.
+- Difficulty guidance: ${challengeNotes}`,
       },
       {
         role: 'user',
@@ -688,14 +886,109 @@ Challenge tier: ${input.challengeTier}
 Current reading profile: ${input.performanceSummary}
 Avoid reusing or resembling these earlier titles: ${input.priorTitles.length > 0 ? input.priorTitles.join(' | ') : 'none yet'}
 
-Generate a fresh original reading story now.`,
+Generate the story plan now.`,
       },
     ],
-    READING_REQUEST_MAX_TOKENS,
-    READING_REQUEST_TEMPERATURE,
-    'reading-story',
-    input.timeoutMs,
+    READING_PLAN_REQUEST_MAX_TOKENS,
+    0.55,
+    'reading-story-plan',
+    timeoutMs,
   )
 
-  return parseReadingStoryFromContent(content)
+  const plan = parseReadingStoryPlanFromContent(planContent)
+  logger.info('Reading story plan generated', {
+    sessionId: input.sessionId,
+    title: plan.title,
+    pageCount: plan.pagePlans.length,
+    keywordGroupCount: plan.keywordGroups.length,
+    vocabularyCount: plan.vocabularyFocus.length,
+    quizItemCount: plan.quizItems.length,
+  })
+
+  const pages: string[] = []
+  for (let index = 0; index < plan.pagePlans.length; index += READING_PAGE_BATCH_SIZE) {
+    const batchPlans = plan.pagePlans.slice(index, index + READING_PAGE_BATCH_SIZE)
+    const batchStart = index + 1
+    const batchEnd = index + batchPlans.length
+    const batchStartedAt = Date.now()
+    logger.info('Reading story page batch generation started', {
+      sessionId: input.sessionId,
+      batchStart,
+      batchEnd,
+      batchSize: batchPlans.length,
+    })
+    const batchContent = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content: `You are writing pages for an original middle-grade fiction passage from a pre-approved plan.
+
+Return ONLY a JSON object with this shape:
+{
+  "pages": ["page text 1", "page text 2"]
+}
+
+Writing rules:
+- Write exactly one finished reading page for each supplied page plan.
+- Each page should be about ${READING_PAGE_WORD_MIN}-${READING_PAGE_WORD_MAX} words.
+- Preserve continuity with the shared title, plot, emotional arc, and evidence details from the plan.
+- Use readable, polished, middle-grade prose with purposeful paragraphing.
+- Do not include headings inside the page body.
+- Keep the final page batch self-consistent and fully original.`,
+        },
+        {
+          role: 'user',
+          content: `Session seed: ${input.sessionId}
+Story title: ${plan.title}
+Challenge tier: ${input.challengeTier}
+Requested pages: ${batchStart}-${batchEnd}
+Overall summary guidance: ${plan.summaryGuidance}
+Page plans:
+${batchPlans.map((pagePlan, batchIndex) => `${batchStart + batchIndex}. ${pagePlan}`).join('\n')}
+
+Write the finished reading pages now.`,
+        },
+      ],
+      READING_PAGE_BATCH_REQUEST_MAX_TOKENS,
+      READING_REQUEST_TEMPERATURE,
+      'reading-story-pages',
+      timeoutMs,
+    )
+    const generatedPages = parseReadingPagesBatchFromContent(batchContent, batchPlans.length)
+    pages.push(...generatedPages)
+    logger.info('Reading story page batch generated', {
+      sessionId: input.sessionId,
+      batchStart,
+      batchEnd,
+      durationMs: Date.now() - batchStartedAt,
+      accumulatedPages: pages.length,
+      chunkCount: Math.ceil(plan.pagePlans.length / READING_PAGE_BATCH_SIZE),
+    })
+    telemetry.trackMetric('reading.story.batch.duration_ms', Date.now() - batchStartedAt, {
+      batchStart: String(batchStart),
+      batchEnd: String(batchEnd),
+    })
+  }
+
+  const story = parseReadingStoryFromContent(JSON.stringify({
+    title: plan.title,
+    pages,
+    summaryPrompt: plan.summaryPrompt,
+    summaryGuidance: plan.summaryGuidance,
+    keywordGroups: plan.keywordGroups,
+    vocabularyFocus: plan.vocabularyFocus,
+    quizItems: plan.quizItems,
+  }))
+
+  logger.info('Reading story generation completed', {
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startedAt,
+    pageCount: story.pages.length,
+    totalWords: story.pages.reduce((sum, page) => sum + countWords(page), 0),
+  })
+  telemetry.trackMetric('reading.story.total_duration_ms', Date.now() - startedAt, {
+    challengeTier: input.challengeTier,
+  })
+
+  return story
 }

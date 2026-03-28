@@ -1,5 +1,6 @@
 import { generateReadingStoryAI, isOpenAIConfigured } from './openai'
 import type { GeneratedReadingStory, Question, QuestionState, ReadingQuizItem, ReadingStorySource, ReadingVocabularyItem, SessionRecord } from './types'
+import { logger, telemetry } from './logger'
 
 const READING_TARGET_MIN_WPM = 120
 const READING_TARGET_MAX_WPM = 140
@@ -619,7 +620,14 @@ export async function createReadingQuestionSetAsync(
         storySource: 'ai',
       }
     } catch (error) {
-      console.warn('OpenAI reading story generation failed, using fallback generator:', error)
+      logger.warn('Reading story generation fell back to local generator', {
+        sessionId,
+        error,
+      })
+      telemetry.trackEvent('reading.fallback', {
+        sessionId,
+        reason: error instanceof Error ? error.message : 'unknown-error',
+      })
       return createFallbackReadingQuestionSet(
         sessionId,
         error instanceof Error ? error.message : 'AI story generation failed.',

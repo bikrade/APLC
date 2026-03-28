@@ -3,6 +3,7 @@ export type SessionMode = 'guided' | 'quiz'
 export type QuestionType = 'decimal' | 'fraction' | 'percentage' | 'mixed' | 'reading_page' | 'reading_summary' | 'reading_quiz'
 export type QuestionKind = 'math' | 'reading-page' | 'reading-summary' | 'reading-quiz'
 export type ReadingStorySource = 'ai' | 'fallback'
+export type ReadingGenerationStatus = 'queued' | 'planning' | 'writing' | 'ready' | 'failed'
 
 export interface ReadingQuizItem {
   id: string
@@ -92,6 +93,14 @@ export interface SessionRecord {
   readingPriorTitles?: string[]
   readingStorySource?: ReadingStorySource
   readingStoryFallbackReason?: string
+  readingGenerationStatus?: ReadingGenerationStatus
+  readingGenerationErrorCode?: string
+  readingGenerationErrorMessage?: string
+  readingGenerationRequestId?: string
+  readingGenerationStartedAt?: string
+  readingGenerationCompletedAt?: string
+  readingGenerationChunkCount?: number
+  readingGenerationChunksCompleted?: number
 }
 
 export interface UserProfile {

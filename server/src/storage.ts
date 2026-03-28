@@ -105,7 +105,7 @@ export async function deleteLegacySessionFiles(userId: string): Promise<void> {
 
 export async function pruneActiveSessionsForSubject(userId: string, subject: Subject): Promise<SessionRecord | null> {
   assertSafeUserId(userId)
-  const sessions = await listAllSessions(userId)
+  const sessions = await listRecentSessions(userId, 50)
   const activeForSubject = sessions
     .filter((session) => session.subject === subject && session.status === 'active')
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())

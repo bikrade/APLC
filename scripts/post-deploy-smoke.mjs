@@ -65,6 +65,11 @@ async function main() {
       throw new Error(`/health status was ${body.status}`)
     }
   })
+  await expectJson('/ready', (body) => {
+    if (body.status !== 'ready') {
+      throw new Error(`/ready status was ${body.status}`)
+    }
+  })
   await expectJson('/config/auth', (body) => {
     if (typeof body.googleConfigured !== 'boolean') {
       throw new Error('/config/auth payload was invalid')

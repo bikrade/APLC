@@ -2,7 +2,11 @@
 
 An adaptive, personalized learning web app for Grade 6 math and reading practice — deployed to Azure Container Apps with persistent storage, observability, and CI/CD.
 
-**Live**: [aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io](https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io)
+**Live**: Azure assigns an ingress hostname to `aplc-app`, and that hostname can change if the Container Apps environment is recreated. Retrieve the current one with:
+
+```bash
+az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv
+```
 
 ## Features
 

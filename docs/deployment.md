@@ -17,8 +17,10 @@ APLC is deployed to **Azure Container Apps** — a serverless container platform
 
 ### App URL
 
-```
-https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io
+Azure assigns an ingress FQDN to `aplc-app`. That hostname can change if the Container Apps environment is recreated, so query the live value instead of relying on an old bookmark:
+
+```bash
+az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv
 ```
 
 ### Health Probes
@@ -62,7 +64,7 @@ AUTH_SESSION_SECRET=secretref:session-secret
 AZURE_STORAGE_ACCOUNT=aplcfiles2026
 AZURE_STORAGE_CONTAINER=userdata
 APPLICATIONINSIGHTS_CONNECTION_STRING=<connection-string>
-CORS_ALLOWED_ORIGINS=https://aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io
+CORS_ALLOWED_ORIGINS=https://<current-aplc-app-fqdn>
 ```
 
 ### Local development (`server/.env`)

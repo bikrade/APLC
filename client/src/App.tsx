@@ -222,7 +222,8 @@ type StartSessionResponse = {
   sessionId: string
   subject: Subject
   sessionMode: SessionMode
-  questionCount: number
+  status?: string
+  questionCount?: number
   questions: Question[]
   answers: AnswerState[]
   currentIndex: number
@@ -231,6 +232,11 @@ type StartSessionResponse = {
   difficultyLevel?: number
   readingStorySource?: 'ai' | 'fallback'
   readingStoryFallbackReason?: string
+  readingGenerationStatus?: ReadingGenerationStatus
+  readingGenerationErrorCode?: string
+  readingGenerationErrorMessage?: string
+  readingGenerationChunkCount?: number
+  readingGenerationChunksCompleted?: number
 }
 
 function splitReadingParagraphs(content?: string): string[] {
@@ -261,6 +267,43 @@ type HelpResponse = {
 }
 
 type ReadingStorySource = 'ai' | 'fallback'
+type ReadingGenerationStatus = 'queued' | 'planning' | 'writing' | 'ready' | 'failed'
+
+function isReadingGenerationPendingStatus(status?: ReadingGenerationStatus | null): boolean {
+  return status === 'queued' || status === 'planning' || status === 'writing'
+}
+
+function getReadingGenerationCopy(status: ReadingGenerationStatus | null, completedChunks: number, totalChunks: number): {
+  title: string
+  detail: string
+} {
+  const safeCompleted = Math.max(0, completedChunks)
+  const safeTotal = Math.max(0, totalChunks)
+  if (status === 'planning') {
+    return {
+      title: 'Planning the story',
+      detail: 'The server is building the story outline, quiz targets, and vocabulary focus before it writes the pages.',
+    }
+  }
+  if (status === 'writing') {
+    return {
+      title: 'Writing the pages',
+      detail: safeTotal > 0
+        ? `Generated ${Math.min(safeCompleted, safeTotal)} of ${safeTotal} story stages so far.`
+        : 'The server is writing the reading pages in smaller batches.',
+    }
+  }
+  if (status === 'failed') {
+    return {
+      title: 'Story generation stalled',
+      detail: 'The server could not finish preparing the reading story.',
+    }
+  }
+  return {
+    title: 'Preparing your story',
+    detail: 'The server has accepted the request and is starting the reading generation job.',
+  }
+}
 
 type ReleaseChange = {
   sha: string
@@ -886,6 +929,11 @@ function App() {
   const [totalTokensUsed, setTotalTokensUsed] = useState(0)
   const [readingStorySource, setReadingStorySource] = useState<ReadingStorySource | null>(null)
   const [readingStoryFallbackReason, setReadingStoryFallbackReason] = useState('')
+  const [readingGenerationStatus, setReadingGenerationStatus] = useState<ReadingGenerationStatus | null>(null)
+  const [readingGenerationErrorCode, setReadingGenerationErrorCode] = useState('')
+  const [readingGenerationErrorMessage, setReadingGenerationErrorMessage] = useState('')
+  const [readingGenerationChunkCount, setReadingGenerationChunkCount] = useState(0)
+  const [readingGenerationChunksCompleted, setReadingGenerationChunksCompleted] = useState(0)
   const [launchState, setLaunchState] = useState<LaunchState>(null)
   const [readingSessionIntroTitle, setReadingSessionIntroTitle] = useState('')
   const [summaryCompletedAt, setSummaryCompletedAt] = useState<string | null>(null)
@@ -1014,6 +1062,7 @@ function App() {
   const currentQuestion = questions[viewIndex]
   const currentAnswerState = answers[viewIndex]
   const isReadingSession = sessionSubject === 'Reading'
+  const isReadingGenerationPending = isReadingSession && isReadingGenerationPendingStatus(readingGenerationStatus)
   const isReadingPage = currentQuestion?.kind === 'reading-page'
   const isReadingSummary = currentQuestion?.kind === 'reading-summary'
   const isReadingQuiz = currentQuestion?.kind === 'reading-quiz'
@@ -1060,6 +1109,34 @@ function App() {
     }
     return latest
   }, [inProgressSessions])
+
+  const applySessionPayload = useCallback((data: StartSessionResponse | (StartSessionResponse & { status?: string })) => {
+    setSessionId(data.sessionId)
+    setSessionSubject(data.subject)
+    setSessionMode(data.sessionMode)
+    setDifficultyLevel(data.difficultyLevel ?? 3)
+    setQuestions(data.questions)
+    setAnswers(data.answers)
+    setCurrentIndex(data.currentIndex)
+    setViewIndex(data.currentIndex)
+    setAnswerInput('')
+    setReadingQuizAnswers([])
+    setHintSteps([])
+    setFeedback('')
+    setIsCorrect(null)
+    setHelpSource(null)
+    setInputState('idle')
+    setShowExitConfirm(false)
+    setSummaryCompletedAt(data.completedAt ?? null)
+    setTotalTokensUsed(data.totalTokensUsed ?? 0)
+    setReadingStorySource(data.readingStorySource ?? null)
+    setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
+    setReadingGenerationStatus(data.readingGenerationStatus ?? null)
+    setReadingGenerationErrorCode(data.readingGenerationErrorCode ?? '')
+    setReadingGenerationErrorMessage(data.readingGenerationErrorMessage ?? '')
+    setReadingGenerationChunkCount(data.readingGenerationChunkCount ?? 0)
+    setReadingGenerationChunksCompleted(data.readingGenerationChunksCompleted ?? 0)
+  }, [])
 
   /* ── Dashboard stats computation ───────────────────────────── */
   const computeDashStats = useCallback(async (userId: string, tokenOverride?: string): Promise<void> => {
@@ -1245,6 +1322,68 @@ function App() {
     }
   }, [currentAnswerState?.selectedOptions, currentAnswerState?.userTextAnswer, currentQuestion?.quizItems, isReadingPage, isReadingQuiz, isReadingSummary])
 
+  useEffect(() => {
+    if (stage !== 'session' || sessionSubject !== 'Reading' || !sessionId || !selectedUserId || !isReadingGenerationPending) {
+      return
+    }
+
+    let cancelled = false
+    let timer: number | null = null
+
+    const poll = async (): Promise<void> => {
+      try {
+        const res = await apiFetch(`/session/${selectedUserId}/${sessionId}`, {}, undefined, 15000)
+        if (!res.ok) {
+          throw new Error(await readApiErrorMessage(res, 'Reading story is still being prepared.'))
+        }
+        const data = (await res.json()) as StartSessionResponse
+        if (cancelled) {
+          return
+        }
+        applySessionPayload(data)
+        if (data.readingGenerationStatus === 'ready') {
+          setError('')
+          const introTitle = data.questions[0]?.title ?? ''
+          if (introTitle) {
+            if (readingSessionIntroTimeoutRef.current !== null) {
+              window.clearTimeout(readingSessionIntroTimeoutRef.current)
+            }
+            setReadingSessionIntroTitle(introTitle)
+            readingSessionIntroTimeoutRef.current = window.setTimeout(() => {
+              setReadingSessionIntroTitle('')
+              readingSessionIntroTimeoutRef.current = null
+            }, 4200)
+          }
+          return
+        }
+        if (data.readingGenerationStatus === 'failed') {
+          setError(data.readingGenerationErrorMessage || 'Reading story generation failed. Please start a fresh session.')
+          return
+        }
+        timer = window.setTimeout(() => {
+          void poll()
+        }, 2000)
+      } catch (err) {
+        if (cancelled) {
+          return
+        }
+        setError(err instanceof Error ? err.message : 'Reading story is still being prepared.')
+        timer = window.setTimeout(() => {
+          void poll()
+        }, 2500)
+      }
+    }
+
+    void poll()
+
+    return () => {
+      cancelled = true
+      if (timer !== null) {
+        window.clearTimeout(timer)
+      }
+    }
+  }, [apiFetch, applySessionPayload, isReadingGenerationPending, readApiErrorMessage, selectedUserId, sessionId, sessionSubject, stage])
+
   const handleGoogleCredential = useCallback(async (credential: string): Promise<void> => {
     setError('')
     setIsBusy(true)
@@ -1318,6 +1457,13 @@ function App() {
     setSessionId('')
     setQuestions([])
     setAnswers([])
+    setReadingStorySource(null)
+    setReadingStoryFallbackReason('')
+    setReadingGenerationStatus(null)
+    setReadingGenerationErrorCode('')
+    setReadingGenerationErrorMessage('')
+    setReadingGenerationChunkCount(0)
+    setReadingGenerationChunksCompleted(0)
     setError('')
     setStage('login')
   }
@@ -1336,28 +1482,10 @@ function App() {
         throw new Error(await readApiErrorMessage(res, 'Failed to start session'))
       }
       const data = (await res.json()) as StartSessionResponse
-      setSessionId(data.sessionId)
-      setSessionSubject(data.subject)
-      setSessionMode(data.sessionMode)
-      setDifficultyLevel(data.difficultyLevel ?? 3)
-      setQuestions(data.questions)
-      setAnswers(data.answers)
-      setCurrentIndex(data.currentIndex)
+      applySessionPayload(data)
       setViewIndex(0)
-      setAnswerInput('')
-      setReadingQuizAnswers([])
-      setHintSteps([])
-      setFeedback('')
-      setIsCorrect(null)
-      setHelpSource(null)
-      setInputState('idle')
-      setShowExitConfirm(false)
-      setSummaryCompletedAt(null)
-      setTotalTokensUsed(data.totalTokensUsed ?? 0)
-      setReadingStorySource(data.readingStorySource ?? null)
-      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
       if (subject === 'Reading') {
-        const introTitle = data.questions[0]?.title ?? ''
+        const introTitle = data.readingGenerationStatus === 'ready' ? (data.questions[0]?.title ?? '') : ''
         if (readingSessionIntroTimeoutRef.current !== null) {
           window.clearTimeout(readingSessionIntroTimeoutRef.current)
         }
@@ -1379,7 +1507,7 @@ function App() {
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         setError(subject === 'Reading'
-          ? 'Reading story generation is taking longer than expected. Please try again in a moment.'
+          ? 'Reading setup took too long to start. Please try again.'
           : 'The request took too long. Please try again.')
       } else {
         setError(err instanceof Error ? err.message : 'Session start failed')
@@ -1439,27 +1567,13 @@ function App() {
         difficultyLevel?: number
         readingStorySource?: ReadingStorySource
         readingStoryFallbackReason?: string
+        readingGenerationStatus?: ReadingGenerationStatus
+        readingGenerationErrorCode?: string
+        readingGenerationErrorMessage?: string
+        readingGenerationChunkCount?: number
+        readingGenerationChunksCompleted?: number
       }
-      setSessionId(data.sessionId)
-      setSessionSubject(data.subject)
-      setSessionMode(data.sessionMode)
-      setDifficultyLevel(data.difficultyLevel ?? 3)
-      setQuestions(data.questions)
-      setAnswers(data.answers)
-      setCurrentIndex(data.currentIndex)
-      setViewIndex(data.currentIndex)
-      setAnswerInput('')
-      setReadingQuizAnswers([])
-      setHintSteps([])
-      setFeedback('')
-      setIsCorrect(null)
-      setHelpSource(null)
-      setInputState('idle')
-      setShowExitConfirm(false)
-      setTotalTokensUsed(data.totalTokensUsed ?? 0)
-      setReadingStorySource(data.readingStorySource ?? null)
-      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
-      setSummaryCompletedAt(data.completedAt ?? null)
+      applySessionPayload(data)
       setReadingSessionIntroTitle('')
       setStage('session')
     } catch (err) {
@@ -1489,30 +1603,16 @@ function App() {
         difficultyLevel?: number
         readingStorySource?: ReadingStorySource
         readingStoryFallbackReason?: string
+        readingGenerationStatus?: ReadingGenerationStatus
+        readingGenerationErrorCode?: string
+        readingGenerationErrorMessage?: string
+        readingGenerationChunkCount?: number
+        readingGenerationChunksCompleted?: number
       }
       if (data.status !== 'completed') {
         throw new Error('This session is not completed yet.')
       }
-      setSessionId(data.sessionId)
-      setSessionSubject(data.subject)
-      setSessionMode(data.sessionMode)
-      setDifficultyLevel(data.difficultyLevel ?? 3)
-      setQuestions(data.questions)
-      setAnswers(data.answers)
-      setCurrentIndex(data.currentIndex)
-      setViewIndex(data.currentIndex)
-      setAnswerInput('')
-      setReadingQuizAnswers([])
-      setHintSteps([])
-      setFeedback('')
-      setIsCorrect(null)
-      setHelpSource(null)
-      setInputState('idle')
-      setShowExitConfirm(false)
-      setTotalTokensUsed(data.totalTokensUsed ?? 0)
-      setReadingStorySource(data.readingStorySource ?? null)
-      setReadingStoryFallbackReason(data.readingStoryFallbackReason ?? '')
-      setSummaryCompletedAt(data.completedAt ?? null)
+      applySessionPayload(data)
       setReadingSessionIntroTitle('')
       setStage('summary')
     } catch (err) {
@@ -2591,46 +2691,74 @@ function App() {
 
           {/* Question Card */}
           <div className="question-card">
-            <div className={`question-prompt ${isViewingPast ? 'viewed' : ''}`}>
-              <MathText text={currentQuestion.prompt} />
-            </div>
-
-            {isReadingPage && (
-              <div className="reading-page-panel">
-                <div className="reading-page-header">
-                  <div>
-                    <p className="reading-page-title">{currentQuestion.title}</p>
-                    <p className="reading-page-meta">{currentQuestion.wordCount ?? 0} words on this page</p>
-                  </div>
-                  <div className="reading-target-chip">Target pace: 130 WPM</div>
+            {isReadingGenerationPending ? (
+              <div className="reading-generation-panel" role="status" aria-live="polite">
+                <div className="reading-generation-icon">AI</div>
+                <p className="reading-generation-title">
+                  {getReadingGenerationCopy(readingGenerationStatus, readingGenerationChunksCompleted, readingGenerationChunkCount).title}
+                </p>
+                <p className="reading-generation-copy">
+                  {getReadingGenerationCopy(readingGenerationStatus, readingGenerationChunksCompleted, readingGenerationChunkCount).detail}
+                </p>
+                <div className="reading-generation-progress-row">
+                  <span className="reading-generation-progress-label">
+                    Stage {Math.min(Math.max(readingGenerationChunksCompleted, 0), Math.max(readingGenerationChunkCount, 1))} / {Math.max(readingGenerationChunkCount, 1)}
+                  </span>
+                  <span className="loading-dots"><span /><span /><span /></span>
                 </div>
-                <div className="reading-page-content">
-                  {splitReadingParagraphs(currentQuestion.content).map((paragraph, index) => (
-                    <p key={`${currentQuestion.id}-paragraph-${index + 1}`} className="reading-page-paragraph">{paragraph}</p>
-                  ))}
-                </div>
-                {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
-                  <div className="reading-vocabulary-card">
-                    <p className="reading-vocabulary-kicker">Word To Notice</p>
-                    {currentQuestion.vocabularyFocus.map((item) => (
-                      <div key={item.term} className="reading-vocabulary-item compact">
-                        <p className="reading-vocabulary-term">{item.term}</p>
-                        <p className="reading-vocabulary-meaning">{item.studentFriendlyMeaning}</p>
-                        <p className="reading-vocabulary-clue">{item.contextClue}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {readingCheckpoint && isCurrentQuestion && (
-                  <div className="reading-coach-card">
-                    <p className="reading-coach-kicker">{readingCheckpoint.title}</p>
-                    <p className="reading-coach-prompt">{readingCheckpoint.prompt}</p>
-                  </div>
+                <p className="reading-generation-note">
+                  This session now prepares the reading story in smaller server-side steps so the browser does not sit on one long request.
+                </p>
+                {(readingGenerationErrorMessage || readingGenerationErrorCode) && (
+                  <p className="reading-generation-detail">
+                    Last update:
+                    {readingGenerationErrorMessage ? ` ${readingGenerationErrorMessage}` : ''}
+                    {readingGenerationErrorCode ? ` (${readingGenerationErrorCode})` : ''}
+                  </p>
                 )}
               </div>
-            )}
+            ) : (
+              <>
+                <div className={`question-prompt ${isViewingPast ? 'viewed' : ''}`}>
+                  <MathText text={currentQuestion.prompt} />
+                </div>
 
-            {isReadingSummary && (
+                {isReadingPage && (
+                  <div className="reading-page-panel">
+                    <div className="reading-page-header">
+                      <div>
+                        <p className="reading-page-title">{currentQuestion.title}</p>
+                        <p className="reading-page-meta">{currentQuestion.wordCount ?? 0} words on this page</p>
+                      </div>
+                      <div className="reading-target-chip">Target pace: 130 WPM</div>
+                    </div>
+                    <div className="reading-page-content">
+                      {splitReadingParagraphs(currentQuestion.content).map((paragraph, index) => (
+                        <p key={`${currentQuestion.id}-paragraph-${index + 1}`} className="reading-page-paragraph">{paragraph}</p>
+                      ))}
+                    </div>
+                    {currentQuestion.vocabularyFocus && currentQuestion.vocabularyFocus.length > 0 && (
+                      <div className="reading-vocabulary-card">
+                        <p className="reading-vocabulary-kicker">Word To Notice</p>
+                        {currentQuestion.vocabularyFocus.map((item) => (
+                          <div key={item.term} className="reading-vocabulary-item compact">
+                            <p className="reading-vocabulary-term">{item.term}</p>
+                            <p className="reading-vocabulary-meaning">{item.studentFriendlyMeaning}</p>
+                            <p className="reading-vocabulary-clue">{item.contextClue}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {readingCheckpoint && isCurrentQuestion && (
+                      <div className="reading-coach-card">
+                        <p className="reading-coach-kicker">{readingCheckpoint.title}</p>
+                        <p className="reading-coach-prompt">{readingCheckpoint.prompt}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {isReadingSummary && (
               <div className="reading-page-panel">
                 <div className="reading-page-header">
                   <div>
@@ -2659,7 +2787,7 @@ function App() {
               </div>
             )}
 
-            {isReadingQuiz && (
+              {isReadingQuiz && (
               <div className="reading-page-panel">
                 <div className="reading-page-header">
                   <div>
@@ -2717,7 +2845,7 @@ function App() {
             )}
 
             {/* Answer Input */}
-            {!isReadingPage && !isReadingQuiz && (
+              {!isReadingPage && !isReadingQuiz && (
               <div className="answer-section">
                 <label className="answer-label">{isReadingSummary ? 'Your Summary' : 'Your Answer'}</label>
                 <div className="answer-input-wrap">
@@ -2752,7 +2880,7 @@ function App() {
             )}
 
             {/* Action Buttons */}
-            {isCurrentQuestion && !isCompleted && (
+              {isCurrentQuestion && !isCompleted && (
               <div className="action-buttons">
                 <button
                   className="btn-submit"
@@ -2790,6 +2918,8 @@ function App() {
                   </>
                 )}
               </div>
+                )}
+              </>
             )}
 
           </div>

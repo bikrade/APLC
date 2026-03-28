@@ -69,7 +69,7 @@
 - Data persists in **Azure Blob Storage** via managed identity (no filesystem dependency in production).
 - Docker image is data-free — no seed data baked in; all user data lives in Blob Storage.
 - Container Registry: `aplcregistry2026` (Basic tier).
-- HTTPS with built-in TLS termination at `aplc-app.redriver-82b9ce7a.eastus.azurecontainerapps.io`.
+- HTTPS uses the current Azure Container Apps ingress hostname for `aplc-app`. Because the Azure-generated hostname can rotate when the environment is recreated, verify the live hostname with `az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv`.
 
 ## UX Enhancements
 
