@@ -2055,10 +2055,10 @@ function App() {
       <div className="dashboard-screen">
         <section className="developer-banner" aria-label="Developer credit">
           <p className="developer-banner-copy">
-            <span className="developer-banner-label">Developed by</span>
+            <span className="developer-banner-label">Developed By & Copyright</span>
             <span className="developer-banner-emphasis">Bikramjit Debnath</span>
             <span className="developer-banner-separator" aria-hidden="true">•</span>
-            <span className="developer-banner-copyright">© {COPYRIGHT_YEAR} Bikramjit Debnath. All rights reserved.</span>
+            <span className="developer-banner-copyright">© {COPYRIGHT_YEAR}. All rights reserved.</span>
           </p>
         </section>
 
