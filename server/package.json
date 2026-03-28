@@ -21,6 +21,9 @@
   "author": "",
   "license": "ISC",
   "description": "",
+  "overrides": {
+    "path-to-regexp": "8.4.0"
+  },
   "dependencies": {
     "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.31.0",
