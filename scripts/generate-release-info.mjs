@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
-const outputPath = path.join(repoRoot, 'client', 'public', 'release-info.json')
+const publicOutputPath = path.join(repoRoot, 'client', 'public', 'release-info.json')
+const embeddedOutputPath = path.join(repoRoot, 'client', 'src', 'generated', 'releaseInfo.ts')
 
 function runGit(command) {
   return execSync(command, {
@@ -62,17 +63,40 @@ function buildReleaseInfo() {
   }
 }
 
-function writeReleaseInfoFile(releaseInfo) {
+function buildLocalFallbackReleaseInfo() {
+  return {
+    version: '0.0.0',
+    channel: 'local',
+    displayLabel: 'Local build',
+    shortSha: 'local',
+    releaseDate: '',
+    headline: 'Latest release info unavailable',
+    changes: [],
+  }
+}
+
+function writePublicReleaseInfoFile(releaseInfo) {
   const contents = `${JSON.stringify(releaseInfo, null, 2)}\n`
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-  fs.writeFileSync(outputPath, contents)
+  fs.mkdirSync(path.dirname(publicOutputPath), { recursive: true })
+  fs.writeFileSync(publicOutputPath, contents)
+}
+
+function writeEmbeddedReleaseInfoModule(releaseInfo) {
+  const moduleContents = `import type { ReleaseInfo } from '../lib/releaseInfo'\n\nexport const embeddedReleaseInfo = ${JSON.stringify(releaseInfo, null, 2)} satisfies ReleaseInfo\n`
+  fs.mkdirSync(path.dirname(embeddedOutputPath), { recursive: true })
+  fs.writeFileSync(embeddedOutputPath, moduleContents)
 }
 
 try {
-  writeReleaseInfoFile(buildReleaseInfo())
-  console.log(`release info synced -> ${path.relative(repoRoot, outputPath)}`)
+  const releaseInfo = buildReleaseInfo()
+  writePublicReleaseInfoFile(releaseInfo)
+  writeEmbeddedReleaseInfoModule(releaseInfo)
+  console.log(`release info synced -> ${path.relative(repoRoot, publicOutputPath)} and ${path.relative(repoRoot, embeddedOutputPath)}`)
 } catch (error) {
-  console.warn('release info sync skipped, using runtime fallback')
+  const fallbackReleaseInfo = buildLocalFallbackReleaseInfo()
+  writePublicReleaseInfoFile(fallbackReleaseInfo)
+  writeEmbeddedReleaseInfoModule(fallbackReleaseInfo)
+  console.warn('release info sync fell back to local metadata')
   console.warn(error instanceof Error ? error.message : String(error))
   process.exit(0)
 }

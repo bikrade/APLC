@@ -3,6 +3,8 @@ import confetti from 'canvas-confetti'
 import 'katex/dist/katex.min.css'
 import './App.css'
 import { formatMs, getAccuracyColor, getQuestionTypeBadge, renderMath } from './lib/sessionUi'
+import { embeddedReleaseInfo } from './generated/releaseInfo'
+import { getReleaseInfoCandidates, mergeReleaseInfo, type ReleaseInfo } from './lib/releaseInfo'
 
 declare global {
   interface Window {
@@ -305,22 +307,6 @@ function getReadingGenerationCopy(status: ReadingGenerationStatus | null, comple
   }
 }
 
-type ReleaseChange = {
-  sha: string
-  date: string
-  summary: string
-}
-
-type ReleaseInfo = {
-  version: string
-  channel: string
-  displayLabel: string
-  shortSha: string
-  releaseDate: string
-  headline: string
-  changes: ReleaseChange[]
-}
-
 type RevealResponse = {
   correctAnswer: number
   explanation: string
@@ -339,28 +325,8 @@ const BUILD_TIME_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as str
 const AUTH_TOKEN_KEY = 'aplc_auth_token'
 const THEME_STORAGE_KEY = 'aplc_theme'
 const SESSION_TARGET_ACCURACY = 80 // target % for the session
-const RELEASE_INFO_URL = `${import.meta.env.BASE_URL}release-info.json`
-const DEFAULT_RELEASE_INFO: ReleaseInfo = {
-  version: '0.0.0',
-  channel: 'beta',
-  displayLabel: 'Local build',
-  shortSha: 'local',
-  releaseDate: '',
-  headline: 'Latest release info unavailable',
-  changes: [],
-}
-
-function isReleaseInfo(value: unknown): value is ReleaseInfo {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Partial<ReleaseInfo>
-  return (
-    typeof candidate.displayLabel === 'string'
-    && typeof candidate.shortSha === 'string'
-    && typeof candidate.headline === 'string'
-    && typeof candidate.releaseDate === 'string'
-    && Array.isArray(candidate.changes)
-  )
-}
+const RELEASE_INFO_URLS = getReleaseInfoCandidates(import.meta.env.BASE_URL)
+const DEFAULT_RELEASE_INFO: ReleaseInfo = embeddedReleaseInfo
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') {
@@ -990,15 +956,24 @@ function App() {
     let isActive = true
 
     const loadReleaseInfo = async (): Promise<void> => {
-      try {
-        const res = await fetch(RELEASE_INFO_URL, { cache: 'no-store' })
-        if (!res.ok) return
-        const data = (await res.json()) as unknown
-        if (isActive && isReleaseInfo(data)) {
-          setReleaseInfo(data)
+      for (const url of RELEASE_INFO_URLS) {
+        try {
+          const res = await fetch(url, { cache: 'no-store' })
+          if (!res.ok) {
+            continue
+          }
+          const data = (await res.json()) as unknown
+          if (isActive) {
+            setReleaseInfo(mergeReleaseInfo(data, embeddedReleaseInfo))
+            return
+          }
+        } catch {
+          // Try the next candidate and keep the embedded metadata if all runtime fetches fail.
         }
-      } catch {
-        // The release badge falls back to local metadata when the generated asset is absent.
+      }
+
+      if (isActive) {
+        setReleaseInfo(embeddedReleaseInfo)
       }
     }
 
@@ -2133,6 +2108,11 @@ function App() {
 
         <div className="dashboard-body">
           {error && <div className="error-msg">⚠️ {error}</div>}
+
+          <section className="developer-banner" aria-label="Developer credit">
+            <p className="developer-banner-kicker">Developed by</p>
+            <p className="developer-banner-name">Bikramjit Debnath</p>
+          </section>
 
           <div className="welcome-header">
             <p className="welcome-date">{formatCurrentDate()}</p>

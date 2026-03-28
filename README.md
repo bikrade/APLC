@@ -20,7 +20,7 @@ az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.in
 - **Reset and restart** — any subject card with an unfinished session can now discard that in-progress work and start a fresh session immediately with the latest UI and generation logic
 - **Dashboard** — GitHub-style activity heatmap, streak tracking, stat cards, today-vs-yesterday practice bars against a profile-driven daily goal, best-next-step coaching, mastery, detailed insights, and parent review
 - **Session modes** — each subject can start in `Guided` mode with live correctness feedback or `Quiz` mode with end-of-session review
-- **Release badge** — top-nav version pill generated from git history with click-to-open recent change notes
+- **Release badge** — top-nav version pill generated from git history with embedded fallback metadata plus click-to-open recent change notes even if the runtime JSON asset is temporarily unavailable
 - **Google OAuth 2.0** — HMAC-SHA256 session tokens, single allowed email
 - **Duolingo-style UX** — confetti celebrations, animated feedback, KaTeX math rendering
 

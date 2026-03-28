@@ -136,8 +136,9 @@ The lint and test automation is wired through package scripts rather than duplic
 4. **Update secrets** — syncs Container Apps secrets from GitHub secrets
 5. **Capture active revision** — stores the last known good Container App revision
 6. **Deploy** — updates Container App with the new image + env vars
-7. **Smoke check** — verifies `/`, `/health`, and `/config/auth`
-8. **Rollback on failure** — re-activates the previous revision if smoke checks fail
+7. **Wait for ready revision** — blocks until `latestRevision` matches `latestReadyRevision`
+8. **Smoke check** — verifies `/`, `/health`, `/ready`, and `/config/auth` with retry/backoff for transient activation responses
+9. **Rollback on failure** — re-activates the previous revision if smoke checks fail
 
 ### GitHub Secrets (11)
 
