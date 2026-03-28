@@ -165,9 +165,24 @@ jobs:
 
       - name: Verify deployment health
         run: |
-          sleep 30
+          for attempt in {1..18}; do
+            LATEST_REVISION=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.latestRevisionName' -o tsv)
+            LATEST_READY_REVISION=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.latestReadyRevisionName' -o tsv)
+            if [ "$LATEST_REVISION" = "$LATEST_READY_REVISION" ] && [ -n "$LATEST_READY_REVISION" ]; then
+              echo "Container App revision is ready: $LATEST_READY_REVISION"
+              break
+            fi
+            if [ "$attempt" -eq 18 ]; then
+              echo "Timed out waiting for the latest Container App revision to become ready. latest=$LATEST_REVISION ready=$LATEST_READY_REVISION"
+              exit 1
+            fi
+            echo "Waiting for latest revision to become ready. latest=$LATEST_REVISION ready=$LATEST_READY_REVISION attempt=$attempt/18"
+            sleep 10
+          done
           FQDN=$(az containerapp show -n aplc-app -g aplc-rg --query 'properties.configuration.ingress.fqdn' -o tsv)
           export SMOKE_BASE_URL="https://$FQDN"
+          export SMOKE_RETRY_ATTEMPTS=12
+          export SMOKE_RETRY_DELAY_MS=5000
           node ./scripts/post-deploy-smoke.mjs
           echo "Deployment healthy at $SMOKE_BASE_URL"
 
