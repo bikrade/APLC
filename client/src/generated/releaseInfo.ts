@@ -1,11 +1,16 @@
 export const releaseInfo = {
-  "version": "0.6.28",
+  "version": "0.6.29",
   "channel": "beta",
-  "displayLabel": "v0.6.28 beta",
-  "shortSha": "394f26a",
+  "displayLabel": "v0.6.29 beta",
+  "shortSha": "dd0bd00",
   "releaseDate": "2026-03-28",
-  "headline": "Add enforced pre-push validation gate",
+  "headline": "Migrate APLC to VNet Container Apps",
   "changes": [
+    {
+      "sha": "dd0bd00",
+      "date": "2026-03-28",
+      "summary": "Migrate APLC to VNet Container Apps"
+    },
     {
       "sha": "394f26a",
       "date": "2026-03-28",
@@ -20,11 +25,6 @@ export const releaseInfo = {
       "sha": "d1793f4",
       "date": "2026-03-28",
       "summary": "Fix Azure deploy image build and rollback"
-    },
-    {
-      "sha": "75cbf21",
-      "date": "2026-03-28",
-      "summary": "Fix reading launch fallback and feedback"
     }
   ]
 } as const

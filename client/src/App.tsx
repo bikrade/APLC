@@ -267,6 +267,7 @@ type RevealResponse = {
   answers: AnswerState[]
   questions: Question[]
   completedAt?: string
+  totalTokensUsed?: number
   difficultyLevel?: number
   adaptiveNotification?: AdaptiveNotification | null
 }
@@ -810,7 +811,16 @@ function App() {
   })
   const answerInputRef = useRef<HTMLInputElement>(null)
   const answerTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const readingSessionIntroTimeoutRef = useRef<number | null>(null)
   const isGoogleAuthEnabled = Boolean(googleClientId)
+
+  useEffect(() => {
+    return () => {
+      if (readingSessionIntroTimeoutRef.current !== null) {
+        window.clearTimeout(readingSessionIntroTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -1238,9 +1248,19 @@ function App() {
       setTotalTokensUsed(data.totalTokensUsed ?? 0)
       if (subject === 'Reading') {
         const introTitle = data.questions[0]?.title ?? ''
+        if (readingSessionIntroTimeoutRef.current !== null) {
+          window.clearTimeout(readingSessionIntroTimeoutRef.current)
+        }
         setReadingSessionIntroTitle(introTitle)
-        window.setTimeout(() => setReadingSessionIntroTitle(''), 2600)
+        readingSessionIntroTimeoutRef.current = window.setTimeout(() => {
+          setReadingSessionIntroTitle('')
+          readingSessionIntroTimeoutRef.current = null
+        }, 4200)
       } else {
+        if (readingSessionIntroTimeoutRef.current !== null) {
+          window.clearTimeout(readingSessionIntroTimeoutRef.current)
+          readingSessionIntroTimeoutRef.current = null
+        }
         setReadingSessionIntroTitle('')
       }
       setStage('session')
@@ -1615,6 +1635,7 @@ function App() {
       setCurrentIndex(data.currentIndex)
       setIsCorrect(false)
       if (data.completedAt !== undefined) setSummaryCompletedAt(data.completedAt)
+      if (data.totalTokensUsed !== undefined) setTotalTokensUsed(data.totalTokensUsed)
       setFeedback(`The answer is ${data.correctAnswer}. ${data.explanation}`)
       setInputState('incorrect')
       setHintSteps([])
@@ -2727,6 +2748,7 @@ function App() {
             <div className="reading-session-intro-card">
               <p className="reading-session-intro-kicker">Today&apos;s Story</p>
               <p className="reading-session-intro-title">{readingSessionIntroTitle}</p>
+              <p className="reading-session-intro-copy">The reading session is ready. Start with page 1 and settle into the story.</p>
             </div>
           </div>
         )}

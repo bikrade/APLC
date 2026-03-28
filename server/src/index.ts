@@ -444,12 +444,17 @@ async function ensureQuestionGenerated(session: SessionRecord, index: number): P
   }
 
   if (session.subject === 'Reading') {
+    flushCallStats()
     const readingOptions = {
       ...(session.readingChallengeTier ? { challengeTier: session.readingChallengeTier } : {}),
       ...(session.readingPerformanceSummary ? { performanceSummary: session.readingPerformanceSummary } : {}),
       ...(session.readingPriorTitles ? { priorTitles: session.readingPriorTitles } : {}),
     }
     session.questions = await createReadingQuestionSetAsync(session.id, readingOptions)
+    const readingStats = flushCallStats()
+    if (readingStats.length > 0) {
+      session.totalTokensUsed = (session.totalTokensUsed ?? 0) + readingStats.reduce((sum, stat) => sum + stat.totalTokens, 0)
+    }
   } else {
     const recentTemplateIds = session.recentTemplateIds ?? []
     const generated = generateQuestionByType(existing.id, existing.type, session.subject, session.adaptiveDifficultyLevel ?? 3, {
@@ -1818,6 +1823,7 @@ app.post('/session/:userId/:sessionId/reveal', asyncHandler(async (req, res) => 
     completedAt: session.completedAt,
     answers: session.answers,
     questions: session.questions.map((item, idx) => toClientQuestion(item, idx)),
+    totalTokensUsed: session.totalTokensUsed,
     difficultyLevel: session.adaptiveDifficultyLevel ?? 3,
     adaptiveNotification,
   })
