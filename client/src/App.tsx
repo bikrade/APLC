@@ -2484,6 +2484,17 @@ function App() {
 
         <div className="session-body">
           {error && <div className="error-msg">⚠️ {error}</div>}
+          {isReadingSession && readingStorySource === 'fallback' && (
+            <div className="session-warning-banner" role="alert">
+              <p className="session-warning-title">Fresh AI story unavailable</p>
+              <p className="session-warning-copy">
+                This reading session is using the local backup story because the fresh story generator did not complete.
+              </p>
+              {readingStoryFallbackReason && (
+                <p className="session-warning-detail">Reason: {readingStoryFallbackReason}</p>
+              )}
+            </div>
+          )}
 
           {/* Question Header */}
           <div className="question-header">

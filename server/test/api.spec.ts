@@ -271,6 +271,7 @@ describe('APLC backend', () => {
         subject,
       })
       const sessionId = start.body.sessionId as string
+      const firstSavedSession = await readSavedSession(ctx.dataRoot, sessionId)
 
       expect(start.status).toBe(200)
 
@@ -287,11 +288,30 @@ describe('APLC backend', () => {
         userId: 'adi',
         subject,
       })
+      const restartedSessionId = restarted.body.sessionId as string
+      const secondSavedSession = await readSavedSession(ctx.dataRoot, restartedSessionId)
 
       expect(restarted.status).toBe(200)
       expect(restarted.body.subject).toBe(subject)
+      expect(restartedSessionId).not.toBe(sessionId)
       expect(restarted.body.questions[0].prompt).toBeTruthy()
       expect(restarted.body.questions[0].kind).toBe(subject === 'Reading' ? 'reading-page' : 'math')
+      if (subject === 'Reading') {
+        expect(secondSavedSession.questions[0]?.title).not.toBe(firstSavedSession.questions[0]?.title)
+        expect(secondSavedSession.questions[0]?.content).not.toBe(firstSavedSession.questions[0]?.content)
+      } else {
+        const firstSignature = [
+          firstSavedSession.questions[0]?.templateId ?? '',
+          firstSavedSession.questions[0]?.prompt ?? '',
+          String(firstSavedSession.questions[0]?.answer ?? ''),
+        ].join('|')
+        const secondSignature = [
+          secondSavedSession.questions[0]?.templateId ?? '',
+          secondSavedSession.questions[0]?.prompt ?? '',
+          String(secondSavedSession.questions[0]?.answer ?? ''),
+        ].join('|')
+        expect(secondSignature).not.toBe(firstSignature)
+      }
     })
   })
 

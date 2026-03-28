@@ -91,3 +91,19 @@ test('reading flow can switch fast readers into the quiz-based comprehension che
   await expect(page.getByText(/Target reading pace is 130 WPM, and speed score is based on how close you were to that target\./i)).toBeVisible()
   await expect(page.getByText(/Overall Reading/i)).toBeVisible()
 })
+
+test('reading start shows a visible fallback alert when a fresh AI story cannot be generated', async ({ page }) => {
+  await enterLocalApp(page)
+
+  const readingCard = page.locator('.subject-card').filter({ hasText: 'Reading' })
+  const resetButton = readingCard.getByRole('button', { name: /reset and start fresh/i })
+  if (await resetButton.isVisible()) {
+    await resetButton.click()
+  } else {
+    await readingCard.getByRole('button', { name: /start guided/i }).click()
+  }
+
+  await expect(page.getByText(/Question 1 of 7/i)).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText(/Fresh AI story unavailable/i)
+  await expect(page.getByRole('alert')).toContainText(/local backup story/i)
+})
